@@ -1,0 +1,873 @@
+{
+  "scannedAt": "2026-09-20T11:11:44.643Z",
+  "dirs": [
+    "C:\\WINDOWS\\Fonts",
+    "C:\\Users\\1919361\\AppData\\Local\\Microsoft\\Windows\\Fonts"
+  ],
+  "files": 217,
+  "families": 123,
+  "cjk": 35,
+  "fonts": [
+    {
+      "value": "Microsoft YaHei",
+      "label": "微软雅黑",
+      "alt": "Microsoft YaHei",
+      "cjk": true,
+      "file": "msyh.ttc"
+    },
+    {
+      "value": "Noto Sans SC",
+      "label": "Noto Sans SC",
+      "alt": "",
+      "cjk": true,
+      "file": "NotoSansSC-VF.ttf"
+    },
+    {
+      "value": "Microsoft JhengHei",
+      "label": "微軟正黑體",
+      "alt": "Microsoft JhengHei",
+      "cjk": true,
+      "file": "msjh.ttc"
+    },
+    {
+      "value": "SimSun",
+      "label": "宋体",
+      "alt": "SimSun",
+      "cjk": true,
+      "file": "simsun.ttc"
+    },
+    {
+      "value": "SimHei",
+      "label": "黑体",
+      "alt": "SimHei",
+      "cjk": true,
+      "file": "simhei.ttf"
+    },
+    {
+      "value": "KaiTi",
+      "label": "楷体",
+      "alt": "KaiTi",
+      "cjk": true,
+      "file": "simkai.ttf"
+    },
+    {
+      "value": "FangSong",
+      "label": "仿宋",
+      "alt": "FangSong",
+      "cjk": true,
+      "file": "simfang.ttf"
+    },
+    {
+      "value": "DengXian",
+      "label": "等线",
+      "alt": "DengXian",
+      "cjk": true,
+      "file": "Deng.ttf"
+    },
+    {
+      "value": "FZShuTi",
+      "label": "方正舒体",
+      "alt": "FZShuTi",
+      "cjk": true,
+      "file": "FZSTK.TTF"
+    },
+    {
+      "value": "FZYaoTi",
+      "label": "方正姚体",
+      "alt": "FZYaoTi",
+      "cjk": true,
+      "file": "FZYTK.TTF"
+    },
+    {
+      "value": "Hiragino Sans TC",
+      "label": "冬青黑體繁體中文",
+      "alt": "Hiragino Sans TC",
+      "cjk": true,
+      "file": "Hiragino Sans TC W6.otf"
+    },
+    {
+      "value": "LiSu",
+      "label": "隶书",
+      "alt": "LiSu",
+      "cjk": true,
+      "file": "SIMLI.TTF"
+    },
+    {
+      "value": "Malgun Gothic",
+      "label": "Malgun Gothic",
+      "alt": "",
+      "cjk": true,
+      "file": "malgun.ttf"
+    },
+    {
+      "value": "Microsoft JhengHei UI",
+      "label": "Microsoft JhengHei UI",
+      "alt": "",
+      "cjk": true,
+      "file": "msjh.ttc"
+    },
+    {
+      "value": "Microsoft YaHei UI",
+      "label": "Microsoft YaHei UI",
+      "alt": "",
+      "cjk": true,
+      "file": "msyh.ttc"
+    },
+    {
+      "value": "MS Gothic",
+      "label": "MS Gothic",
+      "alt": "",
+      "cjk": true,
+      "file": "msgothic.ttc"
+    },
+    {
+      "value": "MS PGothic",
+      "label": "MS PGothic",
+      "alt": "",
+      "cjk": true,
+      "file": "msgothic.ttc"
+    },
+    {
+      "value": "MS UI Gothic",
+      "label": "MS UI Gothic",
+      "alt": "",
+      "cjk": true,
+      "file": "msgothic.ttc"
+    },
+    {
+      "value": "Noto Serif SC",
+      "label": "Noto Serif SC",
+      "alt": "",
+      "cjk": true,
+      "file": "NotoSerifSC-VF.ttf"
+    },
+    {
+      "value": "NSimSun",
+      "label": "新宋体",
+      "alt": "NSimSun",
+      "cjk": true,
+      "file": "simsun.ttc"
+    },
+    {
+      "value": "STCaiyun",
+      "label": "华文彩云",
+      "alt": "STCaiyun",
+      "cjk": true,
+      "file": "STCAIYUN.TTF"
+    },
+    {
+      "value": "STFangsong",
+      "label": "华文仿宋",
+      "alt": "STFangsong",
+      "cjk": true,
+      "file": "STFANGSO.TTF"
+    },
+    {
+      "value": "STHupo",
+      "label": "华文琥珀",
+      "alt": "STHupo",
+      "cjk": true,
+      "file": "STHUPO.TTF"
+    },
+    {
+      "value": "STKaiti",
+      "label": "华文楷体",
+      "alt": "STKaiti",
+      "cjk": true,
+      "file": "STKAITI.TTF"
+    },
+    {
+      "value": "STLiti",
+      "label": "华文隶书",
+      "alt": "STLiti",
+      "cjk": true,
+      "file": "STLITI.TTF"
+    },
+    {
+      "value": "STSong",
+      "label": "华文宋体",
+      "alt": "STSong",
+      "cjk": true,
+      "file": "STSONG.TTF"
+    },
+    {
+      "value": "STXihei",
+      "label": "华文细黑",
+      "alt": "STXihei",
+      "cjk": true,
+      "file": "STXIHEI.TTF"
+    },
+    {
+      "value": "STXingkai",
+      "label": "华文行楷",
+      "alt": "STXingkai",
+      "cjk": true,
+      "file": "STXINGKA.TTF"
+    },
+    {
+      "value": "STXinwei",
+      "label": "华文新魏",
+      "alt": "STXinwei",
+      "cjk": true,
+      "file": "STXINWEI.TTF"
+    },
+    {
+      "value": "STZhongsong",
+      "label": "华文中宋",
+      "alt": "STZhongsong",
+      "cjk": true,
+      "file": "STZHONGS.TTF"
+    },
+    {
+      "value": "YouYuan",
+      "label": "幼圆",
+      "alt": "YouYuan",
+      "cjk": true,
+      "file": "SIMYOU.TTF"
+    },
+    {
+      "value": "Yu Gothic",
+      "label": "Yu Gothic",
+      "alt": "",
+      "cjk": true,
+      "file": "YuGothB.ttc"
+    },
+    {
+      "value": "Yu Gothic UI",
+      "label": "Yu Gothic UI",
+      "alt": "",
+      "cjk": true,
+      "file": "YuGothB.ttc"
+    },
+    {
+      "value": "yyb",
+      "label": "yyb",
+      "alt": "",
+      "cjk": true,
+      "file": "yyb.ttf"
+    },
+    {
+      "value": "草檀斋毛泽东字体",
+      "label": "草檀斋毛泽东字体",
+      "alt": "",
+      "cjk": true,
+      "file": "maozedong.ttf"
+    },
+    {
+      "value": "Arial",
+      "label": "Arial",
+      "alt": "",
+      "cjk": false,
+      "file": "arial.ttf"
+    },
+    {
+      "value": "Bahnschrift",
+      "label": "Bahnschrift",
+      "alt": "",
+      "cjk": false,
+      "file": "bahnschrift.ttf"
+    },
+    {
+      "value": "Book Antiqua",
+      "label": "Book Antiqua",
+      "alt": "",
+      "cjk": false,
+      "file": "ANTQUAB.TTF"
+    },
+    {
+      "value": "Bookman Old Style",
+      "label": "Bookman Old Style",
+      "alt": "",
+      "cjk": false,
+      "file": "BOOKOS.TTF"
+    },
+    {
+      "value": "Bookshelf Symbol 7",
+      "label": "Bookshelf Symbol 7",
+      "alt": "",
+      "cjk": false,
+      "file": "BSSYM7.TTF"
+    },
+    {
+      "value": "Bradley Hand ITC",
+      "label": "Bradley Hand ITC",
+      "alt": "",
+      "cjk": false,
+      "file": "BRADHITC.TTF"
+    },
+    {
+      "value": "Calibri",
+      "label": "Calibri",
+      "alt": "",
+      "cjk": false,
+      "file": "calibri.ttf"
+    },
+    {
+      "value": "Cambria",
+      "label": "Cambria",
+      "alt": "",
+      "cjk": false,
+      "file": "cambria.ttc"
+    },
+    {
+      "value": "Cambria Math",
+      "label": "Cambria Math",
+      "alt": "",
+      "cjk": false,
+      "file": "cambria.ttc"
+    },
+    {
+      "value": "Candara",
+      "label": "Candara",
+      "alt": "",
+      "cjk": false,
+      "file": "Candara.ttf"
+    },
+    {
+      "value": "Cascadia Code",
+      "label": "Cascadia Code",
+      "alt": "",
+      "cjk": false,
+      "file": "CascadiaCode.ttf"
+    },
+    {
+      "value": "Cascadia Mono",
+      "label": "Cascadia Mono",
+      "alt": "",
+      "cjk": false,
+      "file": "CascadiaMono.ttf"
+    },
+    {
+      "value": "Century",
+      "label": "Century",
+      "alt": "",
+      "cjk": false,
+      "file": "CENTURY.TTF"
+    },
+    {
+      "value": "Century Gothic",
+      "label": "Century Gothic",
+      "alt": "",
+      "cjk": false,
+      "file": "GOTHIC.TTF"
+    },
+    {
+      "value": "Comic Sans MS",
+      "label": "Comic Sans MS",
+      "alt": "",
+      "cjk": false,
+      "file": "comic.ttf"
+    },
+    {
+      "value": "Consolas",
+      "label": "Consolas",
+      "alt": "",
+      "cjk": false,
+      "file": "consola.ttf"
+    },
+    {
+      "value": "Constantia",
+      "label": "Constantia",
+      "alt": "",
+      "cjk": false,
+      "file": "constan.ttf"
+    },
+    {
+      "value": "Corbel",
+      "label": "Corbel",
+      "alt": "",
+      "cjk": false,
+      "file": "corbel.ttf"
+    },
+    {
+      "value": "Courier New",
+      "label": "Courier New",
+      "alt": "",
+      "cjk": false,
+      "file": "cour.ttf"
+    },
+    {
+      "value": "Dubai",
+      "label": "Dubai",
+      "alt": "",
+      "cjk": false,
+      "file": "DUBAI-BOLD.TTF"
+    },
+    {
+      "value": "Ebrima",
+      "label": "Ebrima",
+      "alt": "",
+      "cjk": false,
+      "file": "ebrima.ttf"
+    },
+    {
+      "value": "Franklin Gothic Medium",
+      "label": "Franklin Gothic Medium",
+      "alt": "",
+      "cjk": false,
+      "file": "framd.ttf"
+    },
+    {
+      "value": "Freestyle Script",
+      "label": "Freestyle Script",
+      "alt": "",
+      "cjk": false,
+      "file": "FREESCPT.TTF"
+    },
+    {
+      "value": "French Script MT",
+      "label": "French Script MT",
+      "alt": "",
+      "cjk": false,
+      "file": "FRSCRIPT.TTF"
+    },
+    {
+      "value": "Gabriola",
+      "label": "Gabriola",
+      "alt": "",
+      "cjk": false,
+      "file": "Gabriola.ttf"
+    },
+    {
+      "value": "Gadugi",
+      "label": "Gadugi",
+      "alt": "",
+      "cjk": false,
+      "file": "gadugi.ttf"
+    },
+    {
+      "value": "Garamond",
+      "label": "Garamond",
+      "alt": "",
+      "cjk": false,
+      "file": "GARA.TTF"
+    },
+    {
+      "value": "Georgia",
+      "label": "Georgia",
+      "alt": "",
+      "cjk": false,
+      "file": "georgia.ttf"
+    },
+    {
+      "value": "Impact",
+      "label": "Impact",
+      "alt": "",
+      "cjk": false,
+      "file": "impact.ttf"
+    },
+    {
+      "value": "Ink Free",
+      "label": "Ink Free",
+      "alt": "",
+      "cjk": false,
+      "file": "Inkfree.ttf"
+    },
+    {
+      "value": "Javanese Text",
+      "label": "Javanese Text",
+      "alt": "",
+      "cjk": false,
+      "file": "javatext.ttf"
+    },
+    {
+      "value": "JetBrains Mono NL",
+      "label": "JetBrains Mono NL",
+      "alt": "",
+      "cjk": false,
+      "file": "JetBrainsMonoNL-Medium.ttf"
+    },
+    {
+      "value": "Juice ITC",
+      "label": "Juice ITC",
+      "alt": "",
+      "cjk": false,
+      "file": "JUICE___.TTF"
+    },
+    {
+      "value": "Kristen ITC",
+      "label": "Kristen ITC",
+      "alt": "",
+      "cjk": false,
+      "file": "ITCKRIST.TTF"
+    },
+    {
+      "value": "Leelawadee",
+      "label": "Leelawadee",
+      "alt": "",
+      "cjk": false,
+      "file": "LEELAWAD.TTF"
+    },
+    {
+      "value": "Leelawadee UI",
+      "label": "Leelawadee UI",
+      "alt": "",
+      "cjk": false,
+      "file": "LeelaUIb.ttf"
+    },
+    {
+      "value": "Lucida Console",
+      "label": "Lucida Console",
+      "alt": "",
+      "cjk": false,
+      "file": "lucon.ttf"
+    },
+    {
+      "value": "Lucida Handwriting",
+      "label": "Lucida Handwriting",
+      "alt": "",
+      "cjk": false,
+      "file": "LHANDW.TTF"
+    },
+    {
+      "value": "Lucida Sans Unicode",
+      "label": "Lucida Sans Unicode",
+      "alt": "",
+      "cjk": false,
+      "file": "l_10646.ttf"
+    },
+    {
+      "value": "Marlett",
+      "label": "Marlett",
+      "alt": "",
+      "cjk": false,
+      "file": "marlett.ttf"
+    },
+    {
+      "value": "Microsoft Himalaya",
+      "label": "Microsoft Himalaya",
+      "alt": "",
+      "cjk": false,
+      "file": "himalaya.ttf"
+    },
+    {
+      "value": "Microsoft New Tai Lue",
+      "label": "Microsoft New Tai Lue",
+      "alt": "",
+      "cjk": false,
+      "file": "ntailu.ttf"
+    },
+    {
+      "value": "Microsoft PhagsPa",
+      "label": "Microsoft PhagsPa",
+      "alt": "",
+      "cjk": false,
+      "file": "phagspa.ttf"
+    },
+    {
+      "value": "Microsoft Sans Serif",
+      "label": "Microsoft Sans Serif",
+      "alt": "",
+      "cjk": false,
+      "file": "micross.ttf"
+    },
+    {
+      "value": "Microsoft Tai Le",
+      "label": "Microsoft Tai Le",
+      "alt": "",
+      "cjk": false,
+      "file": "taile.ttf"
+    },
+    {
+      "value": "Microsoft Uighur",
+      "label": "Microsoft Uighur",
+      "alt": "",
+      "cjk": false,
+      "file": "MSUIGHUB.TTF"
+    },
+    {
+      "value": "Microsoft Yi Baiti",
+      "label": "Microsoft Yi Baiti",
+      "alt": "",
+      "cjk": false,
+      "file": "msyi.ttf"
+    },
+    {
+      "value": "MingLiU-ExtB",
+      "label": "細明體-ExtB",
+      "alt": "MingLiU-ExtB",
+      "cjk": false,
+      "file": "mingliub.ttc"
+    },
+    {
+      "value": "MingLiU_HKSCS-ExtB",
+      "label": "細明體_HKSCS-ExtB",
+      "alt": "MingLiU_HKSCS-ExtB",
+      "cjk": false,
+      "file": "mingliub.ttc"
+    },
+    {
+      "value": "MingLiU_MSCS-ExtB",
+      "label": "細明體_MSCS-ExtB",
+      "alt": "MingLiU_MSCS-ExtB",
+      "cjk": false,
+      "file": "mingliub.ttc"
+    },
+    {
+      "value": "Mistral",
+      "label": "Mistral",
+      "alt": "",
+      "cjk": false,
+      "file": "MISTRAL.TTF"
+    },
+    {
+      "value": "Mongolian Baiti",
+      "label": "Mongolian Baiti",
+      "alt": "",
+      "cjk": false,
+      "file": "monbaiti.ttf"
+    },
+    {
+      "value": "Monotype Corsiva",
+      "label": "Monotype Corsiva",
+      "alt": "",
+      "cjk": false,
+      "file": "MTCORSVA.TTF"
+    },
+    {
+      "value": "MS Reference Sans Serif",
+      "label": "MS Reference Sans Serif",
+      "alt": "",
+      "cjk": false,
+      "file": "REFSAN.TTF"
+    },
+    {
+      "value": "MS Reference Specialty",
+      "label": "MS Reference Specialty",
+      "alt": "",
+      "cjk": false,
+      "file": "REFSPCL.TTF"
+    },
+    {
+      "value": "MT Extra",
+      "label": "MT Extra",
+      "alt": "",
+      "cjk": false,
+      "file": "MTEXTRA.TTF"
+    },
+    {
+      "value": "MV Boli",
+      "label": "MV Boli",
+      "alt": "",
+      "cjk": false,
+      "file": "mvboli.ttf"
+    },
+    {
+      "value": "Myanmar Text",
+      "label": "Myanmar Text",
+      "alt": "",
+      "cjk": false,
+      "file": "mmrtext.ttf"
+    },
+    {
+      "value": "Nirmala Text",
+      "label": "Nirmala Text",
+      "alt": "",
+      "cjk": false,
+      "file": "Nirmala.ttc"
+    },
+    {
+      "value": "Nirmala UI",
+      "label": "Nirmala UI",
+      "alt": "",
+      "cjk": false,
+      "file": "Nirmala.ttc"
+    },
+    {
+      "value": "Palatino Linotype",
+      "label": "Palatino Linotype",
+      "alt": "",
+      "cjk": false,
+      "file": "pala.ttf"
+    },
+    {
+      "value": "Papyrus",
+      "label": "Papyrus",
+      "alt": "",
+      "cjk": false,
+      "file": "PAPYRUS.TTF"
+    },
+    {
+      "value": "PMingLiU-ExtB",
+      "label": "新細明體-ExtB",
+      "alt": "PMingLiU-ExtB",
+      "cjk": false,
+      "file": "mingliub.ttc"
+    },
+    {
+      "value": "Pristina",
+      "label": "Pristina",
+      "alt": "",
+      "cjk": false,
+      "file": "PRISTINA.TTF"
+    },
+    {
+      "value": "Sans Serif Collection",
+      "label": "Sans Serif Collection",
+      "alt": "",
+      "cjk": false,
+      "file": "SansSerifCollection.ttf"
+    },
+    {
+      "value": "Segoe Fluent Icons",
+      "label": "Segoe Fluent Icons",
+      "alt": "",
+      "cjk": false,
+      "file": "SegoeIcons.ttf"
+    },
+    {
+      "value": "Segoe MDL2 Assets",
+      "label": "Segoe MDL2 Assets",
+      "alt": "",
+      "cjk": false,
+      "file": "segmdl2.ttf"
+    },
+    {
+      "value": "Segoe Print",
+      "label": "Segoe Print",
+      "alt": "",
+      "cjk": false,
+      "file": "segoepr.ttf"
+    },
+    {
+      "value": "Segoe Script",
+      "label": "Segoe Script",
+      "alt": "",
+      "cjk": false,
+      "file": "segoesc.ttf"
+    },
+    {
+      "value": "Segoe UI",
+      "label": "Segoe UI",
+      "alt": "",
+      "cjk": false,
+      "file": "segoeui.ttf"
+    },
+    {
+      "value": "Segoe UI Emoji",
+      "label": "Segoe UI Emoji",
+      "alt": "",
+      "cjk": false,
+      "file": "seguiemj.ttf"
+    },
+    {
+      "value": "Segoe UI Historic",
+      "label": "Segoe UI Historic",
+      "alt": "",
+      "cjk": false,
+      "file": "seguihis.ttf"
+    },
+    {
+      "value": "Segoe UI Symbol",
+      "label": "Segoe UI Symbol",
+      "alt": "",
+      "cjk": false,
+      "file": "seguisym.ttf"
+    },
+    {
+      "value": "Segoe UI Variable",
+      "label": "Segoe UI Variable",
+      "alt": "",
+      "cjk": false,
+      "file": "SegUIVar.ttf"
+    },
+    {
+      "value": "SimSun-ExtB",
+      "label": "SimSun-ExtB",
+      "alt": "",
+      "cjk": false,
+      "file": "simsunb.ttf"
+    },
+    {
+      "value": "SimSun-ExtG",
+      "label": "SimSun-ExtG",
+      "alt": "",
+      "cjk": false,
+      "file": "SimsunExtG.ttf"
+    },
+    {
+      "value": "Sitka",
+      "label": "Sitka",
+      "alt": "",
+      "cjk": false,
+      "file": "SitkaVF-Italic.ttf"
+    },
+    {
+      "value": "Sylfaen",
+      "label": "Sylfaen",
+      "alt": "",
+      "cjk": false,
+      "file": "sylfaen.ttf"
+    },
+    {
+      "value": "Symbol",
+      "label": "Symbol",
+      "alt": "",
+      "cjk": false,
+      "file": "symbol.ttf"
+    },
+    {
+      "value": "Tahoma",
+      "label": "Tahoma",
+      "alt": "",
+      "cjk": false,
+      "file": "tahoma.ttf"
+    },
+    {
+      "value": "Tempus Sans ITC",
+      "label": "Tempus Sans ITC",
+      "alt": "",
+      "cjk": false,
+      "file": "TEMPSITC.TTF"
+    },
+    {
+      "value": "Times New Roman",
+      "label": "Times New Roman",
+      "alt": "",
+      "cjk": false,
+      "file": "times.ttf"
+    },
+    {
+      "value": "Trebuchet MS",
+      "label": "Trebuchet MS",
+      "alt": "",
+      "cjk": false,
+      "file": "trebuc.ttf"
+    },
+    {
+      "value": "Verdana",
+      "label": "Verdana",
+      "alt": "",
+      "cjk": false,
+      "file": "verdana.ttf"
+    },
+    {
+      "value": "Webdings",
+      "label": "Webdings",
+      "alt": "",
+      "cjk": false,
+      "file": "webdings.ttf"
+    },
+    {
+      "value": "Wingdings",
+      "label": "Wingdings",
+      "alt": "",
+      "cjk": false,
+      "file": "wingding.ttf"
+    },
+    {
+      "value": "Wingdings 2",
+      "label": "Wingdings 2",
+      "alt": "",
+      "cjk": false,
+      "file": "WINGDNG2.TTF"
+    },
+    {
+      "value": "Wingdings 3",
+      "label": "Wingdings 3",
+      "alt": "",
+      "cjk": false,
+      "file": "WINGDNG3.TTF"
+    }
+  ]
+}

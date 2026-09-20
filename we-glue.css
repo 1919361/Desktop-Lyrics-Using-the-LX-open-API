@@ -1,0 +1,252 @@
+/* ============================================================================
+ *  Lyrics · Wallpaper Engine 选项层  (we-glue.css)
+ *  ---------------------------------------------------------------------------
+ *  本文件在 lyrics.html 原有样式「之后」加载，只做覆盖，不改动任何原有逻辑：
+ *    · 每个可调项都写成 var(--we-*, <原值>)：没在壁纸引擎里调过时，表现与原来
+ *      一字不差（默认值就是原值）；
+ *    · 选择器统一以 html body 开头（开关类挂在 html 上），保证覆盖优先级，
+ *      避免和原样式里的媒体查询打拉锯；
+ *    · 只碰「表现」，不碰「布局算法」—— 歌词居中、滚动位移、间奏点展开、
+ *      拖动手势这些都由 JS 管，这里一行都不动。
+ *
+ *  变量由 we-glue.js 写入（数据源是壁纸引擎的用户属性）。
+ * ========================================================================== */
+
+
+/* ==========================================================================
+ * 1. 背景图片
+ * ======================================================================== */
+
+/* 模糊 / 亮度 / 饱和度 / 对比度，原值 2.5px / 0.62 / 1.06（原样式里没有 contrast）。
+ * 整串由 we-glue.js 拼好再写进来：对比度等于 1 时干脆不写这一项，
+ * 这样「不调任何选项」时的计算值与原版逐字相同，而不是多一个等价但多余的 contrast(1)。 */
+html body .bg-photo {
+    filter: var(--we-bg-filter, blur(2.5px) brightness(0.62) saturate(1.06));
+    /* 原图 scale(1.06) 是为了补掉模糊在四周留下的透明渗色边，缩放项在它之上再乘 */
+    transform: scale(calc(1.06 * var(--we-bg-zoom, 1)));
+    background-position: var(--we-bg-pos, center);
+}
+
+/* 暗角 + 平铺暗底：两层一起按 --we-vig 缩放（0 = 完全不压暗） */
+html body .bg-photo::after {
+    background:
+        radial-gradient(ellipse at 50% 45%,
+            rgba(6, 8, 16, calc(0.08 * var(--we-vig, 1))) 0%,
+            rgba(5, 6, 12, calc(0.44 * var(--we-vig, 1))) 55%,
+            rgba(3, 4, 9, calc(0.80 * var(--we-vig, 1))) 100%),
+        rgba(4, 5, 11, calc(0.26 * var(--we-vig, 1)));
+}
+
+
+/* ==========================================================================
+ * 2. 背景律动 / 音频氛围
+ * ======================================================================== */
+
+/* 「律动强度」没法直接做在 .bg-pulse-layer 上 —— 它的 opacity 被 JS 每帧
+ * 写成行内样式，样式表压不住。所以把这一层包进一个只有 opacity 的壳
+ * （.we-pulse-wrap，由 JS 创建），用壳的 opacity 当总音量旋钮：
+ * 内外相乘，且随时可改。 */
+html body .we-pulse-wrap {
+    position: absolute;
+    inset: 0;
+    z-index: 0;                 /* 与 .bg-photo 同层，DOM 排在它之后 → 压在照片之上 */
+    pointer-events: none;
+    opacity: var(--we-pulse, 1);
+}
+
+/* 原来「有背景图就把律动减半」的系数（.lyric-stage.has-photo { --pulse-k: .5 }）
+ * 现在统一由 --we-pulse 算，这里把原系数钉成 1，避免两层打折。 */
+html body .lyric-stage,
+html body .lyric-stage.has-photo {
+    --pulse-k: 1 !important;
+}
+
+/* 音频律动：跟着低频鼓点呼吸的柔光。由 JS 每帧写 --we-audio（0~1）。 */
+html body .we-audio-glow {
+    position: absolute;
+    inset: -6%;
+    z-index: 0;
+    pointer-events: none;
+    opacity: var(--we-audio, 0);
+    background: radial-gradient(circle at 50% 70%,
+        var(--we-audio-c, rgba(120, 175, 255, 0.9)) 0%,
+        rgba(90, 140, 255, 0) 62%);
+    filter: blur(58px);
+    will-change: opacity, transform;
+}
+
+
+/* ==========================================================================
+ * 3. 歌词
+ * ======================================================================== */
+
+html body .lyric-scroll {
+    padding-left: var(--we-pad-x, 6%);
+    padding-right: var(--we-pad-x, 6%);
+}
+
+/* 水平对齐：flex 容器是纵向的，align-items 就是横向对齐 */
+html body .lyric-list {
+    align-items: var(--we-lyric-align, center);
+}
+
+/* 基准行（非当前行）。字号按倍数缩放，各断点的原值原样保留在下面。 */
+html body .lyric-line {
+    font-size: calc(2.2rem * var(--we-lyric-scale, 1));
+    line-height: var(--we-lh, 1.5);
+    text-align: var(--we-text-align, center);
+    /* 兜底是 inherit —— 没选字体时这里就等于原样，选了才换。
+       字体栈由 we-glue.js 拼（选中族 + 原 body 字体兜底），见 fontStack()。 */
+    font-family: var(--we-font, inherit);
+    filter: blur(calc(7px * var(--we-dim-k, 1)));
+    opacity: calc(0.28 * var(--we-dim-k, 1));
+}
+
+html body .lyric-line.active {
+    transform: scale(var(--we-active-scale, 2));
+    filter: blur(0);
+    opacity: 1;
+}
+
+/* 已唱过 / 即将唱的两行：共用一个「非当前行存在感」系数，默认值即原值 */
+html body .lyric-line.played {
+    filter: blur(calc(8px * var(--we-dim-k, 1)));
+    opacity: calc(0.26 * var(--we-dim-k, 1));
+}
+html body .lyric-line.upcoming-1 {
+    filter: blur(calc(1.8px * var(--we-dim-k, 1)));
+    opacity: calc(0.72 * var(--we-dim-k, 1));
+}
+html body .lyric-line.upcoming-2 {
+    filter: blur(calc(3.2px * var(--we-dim-k, 1)));
+    opacity: calc(0.55 * var(--we-dim-k, 1));
+}
+
+@media (max-width: 600px) {
+    html body .lyric-line { font-size: calc(1.5rem * var(--we-lyric-scale, 1)); }
+    html body .lyric-scroll {
+        padding-left: var(--we-pad-x, 5%);
+        padding-right: var(--we-pad-x, 5%);
+    }
+}
+
+/* 逐字扫光开关。--lit 是 JS 逐帧写在行内样式上的，样式表里只有 !important
+ * 才压得住它；钉成 1 = 整句都是「已唱」的亮色。 */
+html.we-no-sweep body .lyric-char { --lit: 1 !important; }
+
+/* 未唱到的字色（原值 rgba(255,255,255,0.28)） */
+html body .lyric-char {
+    background-image: linear-gradient(90deg,
+        rgba(255, 255, 255, 1) 0%,
+        rgba(255, 255, 255, 1) calc(var(--lit) * 100%),
+        var(--we-char-dim, rgba(255, 255, 255, 0.28)) calc(var(--lit) * 100%),
+        var(--we-char-dim, rgba(255, 255, 255, 0.28)) 100%);
+}
+
+/* 当前字的光晕。强度为 0 时整组换成 filter:none，省掉每帧的滤镜开销。
+   三层颜色各自独立（原值 基础 0.5 / 已唱 0.55 / 在唱 0.85 + 外层沉蓝 0.5），
+   由 we-glue.js 从「强调色」派生，默认强调色下与原值逐字相同。 */
+html body .lyric-line.active .lyric-char {
+    filter: drop-shadow(0 0 var(--we-glow1, 6px) var(--we-glow-c, rgba(140, 200, 255, 0.5)));
+}
+html body .lyric-line.active .lyric-char.singing {
+    filter:
+        drop-shadow(0 0 var(--we-glow2, 12px) var(--we-glow-c2, rgba(160, 210, 255, 0.85)))
+        drop-shadow(0 0 calc(var(--we-glow2, 12px) * 2) var(--we-glow-c3, rgba(100, 160, 255, 0.5)));
+}
+html body .lyric-line.active .lyric-char.sung {
+    filter: drop-shadow(0 0 var(--we-glow1, 6px) var(--we-glow-c-sung, rgba(140, 200, 255, 0.55)));
+}
+html.we-no-glow body .lyric-line.active .lyric-char,
+html.we-no-glow body .lyric-line.active .lyric-char.singing,
+html.we-no-glow body .lyric-line.active .lyric-char.sung {
+    filter: none;
+}
+
+/* 间奏等待点开关 */
+html.we-no-gap body .lyric-line.gap-line { display: none !important; }
+
+
+/* ==========================================================================
+ * 4. 天际屏（背景艺术字）
+ * ======================================================================== */
+
+html.we-no-art body .bg-art-layer { display: none !important; }
+
+/* 天际屏的字色 + 字体。原页面这一层没有自己的 font-family，是继承 body 的，
+   所以字体的兜底值写 inherit 就等于原样；选了字体才由 --we-font-art 顶上来。
+   字号由原代码每帧写在行内（每字随机 0.72~1.14 倍），这里只管字体。 */
+html body .bg-char {
+    color: var(--we-art-c, rgba(200, 220, 255, 0.5));
+    font-family: var(--we-font-art, inherit);
+}
+html body .bg-char.bg-note { color: var(--we-art-note-c, rgba(212, 231, 255, 0.66)); }
+html body .bg-char.revealed { opacity: var(--we-art-op, 1); }
+/* 退场（换句时旧的一批在淡出）必须仍然是全透明 ——
+   上面那条 .revealed 的优先级更高，会把退场动画顶掉，所以这里补回来。 */
+html body .bg-batch.fade-out .bg-char.revealed { opacity: 0; }
+
+
+/* ==========================================================================
+ * 5. 底部播放控件（液态玻璃）
+ * ======================================================================== */
+
+/* 整体缩放：用 transform 而不是 zoom —— 不影响内部百分比宽度，
+ * 原点压在底边中点，放大时整块「往上长」，水平依旧居中。 */
+html body .dock-wrap {
+    --r-glass: var(--we-r-glass, 26px);   /* 内层 --r-inner 会自动重算，保持同心 */
+    /* 圆角调到比内边距还小时，别让内层算成负数（负圆角是非法值，会整条失效） */
+    --r-inner: max(0px, calc(var(--r-glass) - var(--pad-glass)));
+    transform: translateX(-50%) scale(var(--we-ui-scale, 1));
+    transform-origin: 50% 100%;
+    /* 在原来自适应高度之上再叠一个自定义抬升量 */
+    bottom: calc(var(--dock-lift) + var(--we-lift, 0px) + env(safe-area-inset-bottom, 0px));
+}
+
+/* 窄屏：宽度本来就已经贴边，再放大就溢出了 —— 直接不缩放，圆角也跟着收 */
+@media (max-width: 900px) {
+    html body .dock-wrap {
+        transform: translateX(-50%);
+        --r-glass: min(var(--we-r-glass, 26px), 24px);
+    }
+}
+@media (max-width: 600px) {
+    html body .dock-wrap { --r-glass: min(var(--we-r-glass, 26px), 20px); }
+}
+
+/* 玻璃本体的磨砂参数 */
+html body .player-dock {
+    backdrop-filter:
+        blur(var(--we-glass-blur, 24px))
+        saturate(var(--we-glass-sat, 1.85))
+        brightness(var(--we-glass-bright, 1.06));
+    -webkit-backdrop-filter:
+        blur(var(--we-glass-blur, 24px))
+        saturate(var(--we-glass-sat, 1.85))
+        brightness(var(--we-glass-bright, 1.06));
+}
+
+/* 状态小胶囊用同一套参数，但比玻璃本体轻一档（原值 16/1.6/1.06）。
+   chip 变量由 we-glue.js 精确算出，避免 calc(*0.667) 的浮点误差（16.008px）。 */
+html body .conn-bar {
+    backdrop-filter:
+        blur(var(--we-glass-blur-chip, 16px))
+        saturate(var(--we-glass-sat-chip, 1.6))
+        brightness(var(--we-glass-bright, 1.06));
+    -webkit-backdrop-filter:
+        blur(var(--we-glass-blur-chip, 16px))
+        saturate(var(--we-glass-sat-chip, 1.6))
+        brightness(var(--we-glass-bright, 1.06));
+}
+
+/* 「指针不在控件上就淡下去」的程度（原值 玻璃 0.42 / 状态条 0.5） */
+html body .dock-wrap.idle .player-dock { opacity: var(--we-dim-op, 0.42); }
+html body .dock-wrap.idle .conn-bar { opacity: var(--we-dim-op-chip, 0.5); }
+html.we-no-dim body .dock-wrap.idle .player-dock,
+html.we-no-dim body .dock-wrap.idle .conn-bar { opacity: 1; }
+
+/* 各部件显隐 */
+html.we-no-sheen body .lg-sheen { display: none !important; }
+html.we-no-chip body .conn-bar { display: none !important; }
+html.we-no-collect body #btnCollect { display: none !important; }
+html.we-no-volume body .pb-volume { display: none !important; }

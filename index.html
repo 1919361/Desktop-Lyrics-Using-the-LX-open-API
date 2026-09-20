@@ -1,0 +1,3470 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>沉浸歌词 · Any Listen 逐字 · Apple Music 抬字 · Wallpaper Engine</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { width: 100%; height: 100%; overflow: hidden; }
+        body {
+            background: #0a0a0f;
+            font-family: system-ui, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        }
+
+        .lyric-stage {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: radial-gradient(circle at 50% 45%, rgba(40, 40, 70, 0.95), rgba(6, 6, 10, 0.99) 75%);
+            transition: background 2s ease;
+        }
+        /* 有背景图时，律动光晕按这个系数减弱（.bg-pulse-layer 的 opacity 由 JS 每帧写，
+           所以只能给一个 JS 读得到的系数，不能直接写在 CSS 里） */
+        .lyric-stage { --pulse-k: 1; }
+        .lyric-stage.has-photo { --pulse-k: 0.5; }
+
+        /* ===== 背景图片层：同目录的 backpicture.jpg =====
+           页面启动时读一次：读到了就淡入铺满整屏（挂 .ready），读不到就一直是
+           opacity:0，画面维持默认的深色渐变，等价于"没有这个功能"。
+           照片只当"氛围"用，所以轻微模糊 + 压暗 + 暗角 —— 不论原图多亮，
+           前景的白色歌词都压得住。 */
+        .bg-photo {
+            position: absolute;
+            inset: 0;
+            /* 与 .bg-pulse-layer 同层（z-index:0），但 DOM 排在它前面 →
+               光晕叠在照片之上，照片压在默认渐变之上 */
+            z-index: 0;
+            pointer-events: none;
+            opacity: 0;
+            background-position: center;
+            background-size: cover;
+            background-repeat: no-repeat;
+            filter: blur(2.5px) brightness(0.62) saturate(1.06);
+            transform: scale(1.06);      /* 补掉模糊在四周留下的透明渗色边 */
+            transition: opacity 1.4s ease;
+        }
+        .bg-photo.ready { opacity: 1; }
+        /* 暗角：中间留亮、四周压深，与默认背景的收边感一致。
+           两层叠：① 径向暗角负责收边；② 一层平铺的暗底负责把"整幅"都压下来 ——
+           只有径向暗角时，宽屏下椭圆会被拉满整屏、中心几乎不压，
+           遇到浅色照片（阳光、白衣）白字就发飘。 */
+        .bg-photo::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                radial-gradient(ellipse at 50% 45%,
+                    rgba(6, 8, 16, 0.08) 0%,
+                    rgba(5, 6, 12, 0.44) 55%,
+                    rgba(3, 4, 9, 0.80) 100%),
+                rgba(4, 5, 11, 0.26);
+        }
+
+        /* 背景律动层 */
+        .bg-pulse-layer {
+            position: absolute;
+            inset: -10%;
+            pointer-events: none;
+            z-index: 0;
+            opacity: 0.55;
+            background: radial-gradient(circle at 50% 45%, rgba(60, 90, 160, 0.65), transparent 65%);
+            filter: blur(70px);
+            will-change: transform, opacity;
+        }
+
+        /* ===== 背景艺术字层 ===== */
+        .bg-art-layer {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+            pointer-events: none;
+            z-index: 1;
+        }
+        /* 每一句的背景字各自成批放在一个容器里：
+           换句时新批可以立刻建（这样"唱到哪段才浮现哪段"的时刻才准），
+           旧批在同一时间独立淡出，两者叠着交叉过渡，不再有空档/硬切 */
+        .bg-batch {
+            position: absolute;
+            inset: 0;
+        }
+
+        .bg-char {
+            position: absolute;
+            font-weight: 700;
+            line-height: 1;
+            color: rgba(200, 220, 255, 0.5);
+            will-change: transform, opacity;
+            user-select: none;
+            transform-origin: center center;
+            filter: blur(10px);
+            opacity: 0;
+            /* 逐字出现只过渡 opacity/filter/scale；
+               transform 交给 rAF 每帧写，两者分离才不会互相打架导致抖动。
+               时长放长 + easeOutCubic：出现是一条长尾缓出，不再"啪"地弹出来 */
+            scale: 0.82;
+            transition: opacity 1.15s cubic-bezier(0.33, 1, 0.68, 1),
+                        filter 1.15s cubic-bezier(0.33, 1, 0.68, 1),
+                        scale 1.3s cubic-bezier(0.22, 1, 0.36, 1);
+            white-space: nowrap;
+        }
+        .bg-char.revealed {
+            opacity: 1;
+            filter: blur(6px);
+            scale: 1;
+        }
+        /* 旧一批字的退场：缓慢下沉虚化（ease-in） */
+        .bg-batch.fade-out .bg-char {
+            opacity: 0;
+            filter: blur(14px);
+            scale: 0.86;
+            transition: opacity 0.42s cubic-bezier(0.4, 0, 0.7, 1),
+                        filter 0.42s cubic-bezier(0.4, 0, 0.7, 1),
+                        scale 0.46s cubic-bezier(0.4, 0, 0.7, 1);
+        }
+
+        /* 间奏期间用音符图标代替歌词（🎵 ♪ ♫ ~ …）：
+           这些符号若走 .bg-char 的默认色会偏暗，单独提亮一点，
+           让它们在深色背景上像"飘着的装饰音"（彩色 emoji 保持原色） */
+        .bg-char.bg-note {
+            color: rgba(212, 231, 255, 0.66);
+            font-weight: 600;
+        }
+
+        /* ===== 底部悬浮播放控件（iOS 26 Liquid Glass）=====
+           整块「悬浮」：脱离文档流、四周留白、投影离地，视觉上浮在歌词之上；
+           因为不再占用布局高度，#lyricScroll 依旧拿满整屏，
+           当前歌词行仍然落在屏幕几何中心，既有滚动/居中逻辑一行不用改。
+           .dock-wrap 只负责定位与「连接状态贴右下角」，玻璃本体是 .player-dock。 */
+        .dock-wrap {
+            position: absolute;
+            left: 50%;
+            /* 玻璃本体距屏幕底 = --dock-lift + 状态条高 + 间隙。
+               64 + 28 + 9 ≈ 101px：浮在下方留白里，不压歌词也不贴任务栏。 */
+            --dock-lift: 64px;
+            bottom: calc(var(--dock-lift) + env(safe-area-inset-bottom, 0px));
+            transform: translateX(-50%);
+            z-index: 12;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;          /* 状态条靠右 = 贴玻璃右下角 */
+            gap: 9px;
+            width: min(1120px, calc(100vw - 48px));
+            pointer-events: none;           /* 只有玻璃本体与状态条吃指针事件 */
+
+            /* 圆角按 Apple HIG「同心圆角」成套给出：内层 = 外层 − 间距。
+               改外层半径时内层自动跟随，不会出现「大圆角里塞个小圆角」的错位。
+               ① .player-dock  : r-glass            （贴边）
+               ② .player-bar   : r-glass − pad      （内缩 pad）
+               ③ .album-art    : r-glass − pad      （内缩 pad，与 ② 同心）
+               ④ 圆形/胶囊件（按钮、圆点、细轨）本就用 50% / 999px，天然对齐 */
+            --r-glass: 26px;
+            --pad-glass: 10px;
+            --r-inner: calc(var(--r-glass) - var(--pad-glass));
+        }
+
+        /* 指针位置 → 玻璃高光的位置。
+           注册成 <length-percentage> 才能把 px 值直接喂进渐变（未注册的 var 会被当成裸字符串，
+           在 radial-gradient 的 at 位置上不一定合法）。 */
+        @property --mx { syntax: '<length-percentage>'; inherits: true; initial-value: 50%; }
+        @property --my { syntax: '<length-percentage>'; inherits: true; initial-value: 50%; }
+
+        .player-dock {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            width: 100%;
+            /* 内边距四周等距 —— 同心圆角的前提：内外层间距处处相等才算"对齐" */
+            padding: var(--pad-glass);
+            border-radius: var(--r-glass);
+            color: #fff;
+            /* 玻璃底色，四层叠出来（从上到下）：
+               ① 上缘内侧光带 —— 模拟玻璃厚度把顶部的光折进来；
+               ② 斜向淡白 —— 玻璃本身的"料"；
+               ③ 极淡的冷色底 —— 保证歌词最亮的时候字也压得住（可读性兜底）；
+               真正的背景交给 backdrop-filter 去取。 */
+            background:
+                linear-gradient(180deg,
+                    rgba(255, 255, 255, 0.10) 0%,
+                    rgba(255, 255, 255, 0) 38%),
+                linear-gradient(135deg,
+                    rgba(255, 255, 255, 0.155) 0%,
+                    rgba(255, 255, 255, 0.055) 42%,
+                    rgba(255, 255, 255, 0.105) 100%),
+                rgba(9, 11, 18, 0.22);
+            /* 背面磨砂 + 提饱和 + 微提亮：歌词从玻璃后面透出来时会被"抬起"，
+               这是液态玻璃与普通半透明黑最直观的差别 */
+            backdrop-filter: blur(24px) saturate(1.85) brightness(1.06);
+            -webkit-backdrop-filter: blur(24px) saturate(1.85) brightness(1.06);
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.5),
+                inset 0 -1px 0 rgba(255, 255, 255, 0.09),
+                inset 0 0 30px rgba(255, 255, 255, 0.05),
+                inset 0 -14px 26px -18px rgba(150, 190, 255, 0.30),
+                0 20px 46px rgba(0, 0, 0, 0.44),
+                0 3px 10px rgba(0, 0, 0, 0.26);
+            pointer-events: auto;
+            isolation: isolate;             /* 内部高光的 screen 混合只作用在玻璃内部 */
+            transform: translate3d(0, 0, 0);
+            /* fill-mode 用 backwards 而不是 both：动画结束后不再由动画接管 opacity，
+               否则挂上 .idle 想降低透明度会被动画终态的 opacity:1 压回去 */
+            animation: dockIn 0.9s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+            /* 亮回来的速度（0.3s，跟手）：淡下去的速度由 .dock-wrap.idle 里的
+               transition-duration 覆盖成 0.55s。
+               另外把拖拽相关的浏览器默认行为关掉：
+               拖动进度条/音量条时不会选中文字、也不会拖出一个原生拖影 */
+            transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-user-drag: none;
+        }
+        @keyframes dockIn {
+            from { opacity: 0; transform: translate3d(0, 16px, 0) scale(0.985); }
+            to   { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+        }
+
+        /* ===== 变淡：指针不在控件上就淡下去 =====
+           判定只看一件事 —— 指针是否落在播放控件 / 连接状态条内（命中就由 JS 摘掉 .dock-wrap 的 .idle）：
+             在控件内 → 恢复正常亮度；不在 → 降到 0.42。
+           过渡只碰 opacity、判定只读命中状态，都不触发布局。
+           快慢两头分开：淡下去 0.55s（慢，别闪），亮回来 0.3s（快，跟手）——
+           亮回来走的是元素自身的 transition-duration。 */
+        .dock-wrap.idle .player-dock { opacity: 0.42; transition-duration: 0.55s; }
+        .dock-wrap.idle .conn-bar { opacity: 0.5; transition-duration: 0.55s; }
+        /* 淡下去的时候把"自主游走"的光池也停掉：看不见的东西不必继续每帧合成 */
+        .dock-wrap.idle .lg-sheen .s-drift { animation-play-state: paused; }
+
+        /* 玻璃棱边：mask 抠出 1px 环再填斜向渐变 —— 光沿边缘走，而不是一圈死白 */
+        .player-dock::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            z-index: 3;
+            border-radius: inherit;
+            padding: 1px;
+            background: linear-gradient(140deg,
+                rgba(255, 255, 255, 0.66) 0%,
+                rgba(255, 255, 255, 0.10) 26%,
+                rgba(255, 255, 255, 0.02) 54%,
+                rgba(255, 255, 255, 0.30) 82%,
+                rgba(255, 255, 255, 0.52) 100%);
+            -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+            -webkit-mask-composite: xor;
+            mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+            mask-composite: exclude;
+            pointer-events: none;
+        }
+
+        /* 液态高光：一团跟着指针走，一团自己缓慢游走。
+           两团都只用 transform / 背景位置，不参与布局，也不会推动里面的文字。 */
+        .lg-sheen {
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            border-radius: inherit;
+            overflow: hidden;
+            pointer-events: none;
+            mix-blend-mode: screen;
+        }
+        .lg-sheen i {
+            position: absolute;
+            left: 0;
+            top: 0;
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        /* 跟随指针的高光（--mx/--my 由 JS 每帧写入，单位 px） */
+        .lg-sheen .s-follow {
+            background: radial-gradient(190px 105px at var(--mx, 50%) var(--my, 50%),
+                rgba(255, 255, 255, 0.30), rgba(255, 255, 255, 0) 72%);
+            opacity: 0;
+            transition: opacity 0.45s ease;
+        }
+        .player-dock:hover .lg-sheen .s-follow { opacity: 1; }
+        /* 自主游走的冷调光池：给静态画面留一点"液态"的呼吸。
+           注意光池必须完全落在这一层自己的盒子里 —— 半径 26% × 透明点 70% ≈ 18%，
+           而平移只有 ±11%（×scale 1.06 后 ≈ ±19%），所以整层左右平移时
+           盒子边缘始终是全透明的，不会把一条硬边扫出来。 */
+        .lg-sheen .s-drift {
+            background: radial-gradient(26% 130% at 50% 50%,
+                rgba(178, 208, 255, 0.22), rgba(178, 208, 255, 0) 70%);
+            will-change: transform;
+            animation: lgDrift 19s ease-in-out infinite;
+        }
+        @keyframes lgDrift {
+            0%   { transform: translate3d(-11%, 0, 0) scale(0.94); }
+            50%  { transform: translate3d(11%, 0, 0) scale(1.06); }
+            100% { transform: translate3d(-11%, 0, 0) scale(0.94); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .lg-sheen .s-drift { animation: none; }
+            .player-dock { animation: none; }
+        }
+
+        /* 封面 + 歌名 + 歌手
+           （position/z-index：把内容提到 .lg-sheen 高光层之上，高光只铺在玻璃面上） */
+        .pd-info {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            flex: 0 1 auto;
+            min-width: 0;
+            max-width: 32%;
+        }
+
+        .album-art {
+            width: 52px;
+            height: 52px;
+            /* 与玻璃同心：26 − 10 = 16。封面是离玻璃左缘最近的圆角件，
+               半径不同心时那圈弧线会明显"各转各的" */
+            border-radius: var(--r-inner);
+            background: rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
+            object-fit: cover;
+            display: block;
+            opacity: 0;
+            transform: scale(0.9);
+            transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+                        transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+            flex-shrink: 0;
+        }
+        .album-art.visible {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .track-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            min-width: 0;
+        }
+
+        .track-name {
+            font-size: 0.98rem;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.9);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+        }
+        .track-singer {
+            font-size: 0.8rem;
+            font-weight: 300;
+            color: rgba(255, 255, 255, 0.55);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* ===== 进度条（可拖动定位）=====
+           --p（0~1）是唯一进度来源：填充走 scaleX(var(--p))，滑块走 left:calc(var(--p)*100%)，
+           两者共用一个自定义属性，每帧只写一次样式 —— 逻辑上不可能不同步，
+           也不需要每帧读一次 offsetWidth（读宽度会触发同步重排）。 */
+        .track-progress {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1 1 auto;
+            min-width: 160px;
+            --p: 0;
+        }
+        .track-progress-time {
+            flex: 0 0 auto;
+            min-width: 46px;
+            font-size: 0.74rem;
+            font-weight: 400;
+            color: rgba(255, 255, 255, 0.62);
+            font-variant-numeric: tabular-nums;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+            text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+            transition: color 0.2s ease;
+        }
+        .track-progress-time.right { text-align: right; }
+        .track-progress.seeking .track-progress-time { color: rgba(255, 255, 255, 0.95); }
+
+        /* 轨道：外层 26px 是命中区，视觉上的细轨由 ::before 画，hover/拖动时变粗 */
+        .track-progress-track {
+            position: relative;
+            flex: 1 1 auto;
+            height: 26px;
+            min-width: 80px;
+            cursor: pointer;
+            touch-action: none;
+        }
+        .track-progress-track::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 50%;
+            height: 5px;
+            margin-top: -2.5px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.18);
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+            transition: height 0.18s ease, margin-top 0.18s ease, background-color 0.18s ease;
+        }
+        .track-progress:hover .track-progress-track::before,
+        .track-progress.seeking .track-progress-track::before {
+            height: 8px;
+            margin-top: -4px;
+            background: rgba(255, 255, 255, 0.24);
+        }
+        /* 填充用 scaleX 而不是 width：不触发布局，只走合成线程 */
+        .track-progress-fill {
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 50%;
+            height: 5px;
+            margin-top: -2.5px;
+            border-radius: 4px;
+            background: linear-gradient(90deg, rgba(255, 255, 255, 0.72), #ffffff);
+            transform: scaleX(var(--p, 0));
+            transform-origin: 0 50%;
+            will-change: transform;
+            pointer-events: none;
+            transition: height 0.18s ease, margin-top 0.18s ease;
+        }
+        .track-progress:hover .track-progress-fill,
+        .track-progress.seeking .track-progress-fill {
+            height: 8px;
+            margin-top: -4px;
+        }
+        .track-progress-thumb {
+            position: absolute;
+            top: 50%;
+            left: calc(var(--p, 0) * 100%);
+            width: 11px;
+            height: 11px;
+            margin: -5.5px 0 0 -5.5px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.18s ease, width 0.16s ease, height 0.16s ease, margin 0.16s ease;
+        }
+        .track-progress:hover .track-progress-thumb,
+        .track-progress.seeking .track-progress-thumb { opacity: 1; }
+        .track-progress.seeking .track-progress-thumb {
+            width: 15px;
+            height: 15px;
+            margin: -7.5px 0 0 -7.5px;
+        }
+        /* 还没有歌曲（时长未知）时不可拖 */
+        .track-progress.disabled { pointer-events: none; opacity: 0.45; }
+
+        /* ===== 歌词滚动区域 ===== */
+        .lyric-scroll {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 0 6%;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+            position: relative;
+            z-index: 2;
+        }
+        .lyric-scroll::-webkit-scrollbar { display: none; }
+
+        .lyric-list {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            /* 滚动位移由 JS 用 WAAPI 驱动 transform，保持提升可避免每次换行
+               重新提升/降级图层带来的额外开销 */
+            will-change: transform;
+        }
+
+        .lyric-line {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: baseline;
+            font-size: 2.2rem;
+            font-weight: 600;
+            line-height: 1.5;
+            text-align: center;
+            margin: 10px 0;
+            padding: 4px 16px;
+            border-radius: 40px;
+            max-width: 100%;
+            /* 注意：不要在这里写 will-change——68 行 × 每行一个图层 = 图层爆炸，
+               而行/字的过渡本身会由浏览器在动画期间自动提升图层 */
+            pointer-events: none;
+            letter-spacing: 0.02em;
+            filter: blur(7px);
+            opacity: 0.28;
+            transform: scale(0.94);
+            transition:
+                filter 1.3s cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 1.1s cubic-bezier(0.16, 1, 0.3, 1),
+                transform 1.5s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .lyric-line.active {
+            filter: blur(0);
+            opacity: 1;
+            transform: scale(2);
+            font-weight: 700;
+            z-index: 3;
+            transition:
+                filter 1.0s cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1),
+                transform 1.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .lyric-line.upcoming-1 {
+            filter: blur(1.8px);
+            opacity: 0.72;
+            transform: scale(1.0);
+            transition:
+                filter 1.2s cubic-bezier(0.16, 1, 0.3, 1) 0.08s,
+                opacity 1.0s cubic-bezier(0.16, 1, 0.3, 1) 0.08s,
+                transform 1.3s cubic-bezier(0.16, 1, 0.3, 1) 0.08s;
+        }
+
+        .lyric-line.upcoming-2 {
+            filter: blur(3.2px);
+            opacity: 0.55;
+            transform: scale(0.98);
+            transition:
+                filter 1.2s cubic-bezier(0.16, 1, 0.3, 1) 0.16s,
+                opacity 1.0s cubic-bezier(0.16, 1, 0.3, 1) 0.16s,
+                transform 1.3s cubic-bezier(0.16, 1, 0.3, 1) 0.16s;
+        }
+
+        .lyric-line.played {
+            filter: blur(8px);
+            opacity: 0.26;
+            transform: scale(0.93);
+        }
+
+        /* ===== 逐字：扫光 + 抬高 ===== */
+        .lyric-char {
+            display: inline-block;
+            white-space: pre;
+            --lit: 0;
+            background-image: linear-gradient(
+                90deg,
+                rgba(255, 255, 255, 1) 0%,
+                rgba(255, 255, 255, 1) calc(var(--lit) * 100%),
+                rgba(255, 255, 255, 0.28) calc(var(--lit) * 100%),
+                rgba(255, 255, 255, 0.28) 100%
+            );
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            -webkit-text-fill-color: transparent;
+
+            /* 抬字不用 custom property 过渡，改由 JS 用 Web Animation 直接动画 transform：
+               ① transform 可被合成器线程接管，不占主线程；
+               ② 不会每帧重算样式 + 重绘描边光晕（这是"生硬 + 卡"的双重来源）。 */
+            transform: translateY(0em) scale(1);
+            transform-origin: 50% 60%;
+            backface-visibility: hidden;
+
+            /* 只有 lit 由 rAF 每帧精确设置；同样不要写 will-change：每个字一个图层会造成数百个合成层 */
+            transition: filter 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .lyric-line.active .lyric-char {
+            filter: drop-shadow(0 0 6px rgba(140, 200, 255, 0.5));
+        }
+        .lyric-line.active .lyric-char.singing {
+            filter: drop-shadow(0 0 12px rgba(160, 210, 255, 0.85))
+                    drop-shadow(0 0 24px rgba(100, 160, 255, 0.5));
+        }
+        .lyric-line.active .lyric-char.sung {
+            filter: drop-shadow(0 0 8px rgba(140, 200, 255, 0.55));
+        }
+
+        .lyric-line:not(.active) .lyric-char {
+            background-image: none;
+            -webkit-text-fill-color: currentColor;
+            color: white;
+            --lit: 0;
+            transform: none;
+            transition: none;
+        }
+
+        /* ===== 间奏等待点（· · ·）=====
+           ① 平时完全不出现、且不占位置：等待点行高度就是 0，
+              所以它上下的两句歌词是「紧挨着」的（不是留一个空洞）。
+           ② 进入等待区间时才展开：上下两句歌词平滑地让开，三个点
+              在让开的空隙里浮现；等待一结束就重新合拢、随之隐藏。
+           ③ 靠"歌词的左边界"，而不是容器（≈屏幕）的左边界：行宽由
+              --gap-w 给（JS 量出最长歌词行的宽度算出来的），行居中排布，
+              三个点再靠这条盒子的左缘 —— 大屏上歌词是居中的，
+              贴容器左缘会离歌词十万八千里。
+              从左侧长大（transform-origin: 0 50%），缩放不会把左半推出去。
+           ④ 三个点「一个接一个」点亮 —— 离散切换，不做圆点内部的扫光。
+           ⑤ 等待期间三个点作为一个整体一起呼吸：幅度小、周期长（参考
+              Apple Music 的间奏省略号，是"若有若无的心跳"，不是跳动）。
+
+           展开/合拢的做法：外层直接过渡 height 0 ↔ 0.95em（纯长度，插值
+           在所有浏览器上都成立），内层 height:100% + overflow:hidden 负责裁切。
+           两个坑：
+             - 裁切层不能有垂直 padding。它会把外层压不到 0（垂直内边距
+               不可压缩，会撑住 min-content），折叠后残留几十像素。
+               所以"呼吸余量"改用外层的 0.95em 高度给，而不是内边距。
+             - 内层必须 height:100% 跟着外层高度走，才能逐帧裁切。 */
+        .lyric-line.gap-line {
+            display: block;
+            height: 0;                               /* 折叠：不占高度 */
+            /* 居中 + 由 --gap-w 决定的宽度 —— 这样"盒子的左缘"就落在
+               歌词块的左边界附近，而不是容器的左边缘（大屏上二者能差几百 px）。
+               --gap-w 由 JS 量出（updateGapWidth），未量到时的兜底见下。 */
+            align-self: center;
+            width: var(--gap-w, min(72vw, 100%));
+            margin: 0;
+            padding: 0;
+            letter-spacing: 0;
+            transform-origin: 0 50%;
+
+            /* 折叠态：透明 + 模糊 + 略缩，展开时反向回正 */
+            opacity: 0;
+            visibility: hidden;
+            filter: blur(5px);
+            transform: scale(1.45);
+            transition:
+                height 0.62s cubic-bezier(0.22, 1, 0.32, 1),
+                margin 0.62s cubic-bezier(0.22, 1, 0.32, 1),
+                opacity 0.44s ease,
+                filter 0.44s ease,
+                transform 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+                visibility 0s linear 0.5s;
+        }
+        .lyric-line.gap-line.open {
+            height: 0.95em;                          /* 展开：让出空隙（em 随字号缩放） */
+            margin: 12px 0;
+            opacity: 1;
+            visibility: visible;
+            filter: blur(0);
+            transform: scale(1.55);
+            transition:
+                height 0.62s cubic-bezier(0.22, 1, 0.32, 1),
+                margin 0.62s cubic-bezier(0.22, 1, 0.32, 1),
+                opacity 0.44s ease,
+                filter 0.44s ease,
+                transform 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+                visibility 0s linear 0s;
+        }
+
+        /* 裁切层：高度跟着外层走，0 高时三个点被完全裁掉。
+           注意这里不能加垂直 padding（见上）。 */
+        .gap-inner {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 0.26em;                            /* 与圆点直径按比例收，保持"一个紧凑省略号"的观感 */
+            height: 100%;
+            min-height: 0;
+            overflow: hidden;
+            /* 横向留出呼吸放大的余量。注意这里只有横向 padding —— 纵向
+               内边距不可压缩，会把折叠态撑住（见上）。 */
+            padding: 0 18px;
+            /* 呼吸的缩放锚点 = 「三个点这个小团」的水平中心，而不是左缘。
+               锚在左缘时：最左那个点钉死不动、整团向右顶出去，看着像被
+               从左边拽着长，很别扭；锚在团心则是左右对称地一起鼓起来。
+               团宽 = 3 × 0.3em + 2 × 0.26em = 1.42em，半宽 0.71em；
+               再加左内边距 18px 得到团心。用 em/calc 写，字号换挡时自动跟着走。
+               （注意不能写成 50%：那是这行 579px 宽盒子的中心，
+                 而三个点是靠左放的，绕盒子中心缩放会让整团左右平移几十像素。） */
+            transform-origin: calc(18px + 0.71em) 50%;
+        }
+
+        .gap-dot {
+            display: block;
+            flex: 0 0 auto;
+            width: 0.3em;
+            height: 0.3em;
+            border-radius: 50%;
+            background-color: rgba(255, 255, 255, 0.26);
+            /* 不加光晕：三个点挨得近，各自的阴影会在外面叠成一圈雾，
+               把整组包起来（看着像发光的胶囊）。纯色圆点更干净。 */
+            box-shadow: none;
+            transition: background-color 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+                        box-shadow 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+                        transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        /* 一次点亮一个点：整颗圆点由暗转亮，而不是内部扫过去。
+           点亮态也只留一丝极弱的辉光（半径 5px / 透明度 0.18）——
+           在暗底上让"亮起来的点"像在发光，而不是死白一片。 */
+        .gap-dot.lit {
+            background-color: rgba(255, 255, 255, 0.98);
+            box-shadow: 0 0 5px rgba(150, 200, 255, 0.18);
+        }
+
+        /* 呼吸：三个点作为「一个整体」一起起伏（不再各点错相位）。
+           动画加在裁切层上 → 三个点连同间距一起缩放，是同一个心跳；
+           加在单个点上就会各自缩放、还被各自的 transition 干扰。
+           幅度/周期参考 Apple Music 的间奏点：1 → 1.12、3.6s 一个来回，
+           是"很轻的一口气"，不是弹跳。 */
+        @keyframes gapBreath {
+            0%, 100% { transform: scale(1); }
+            50%      { transform: scale(1.12); }
+        }
+        .lyric-line.gap-line.open .gap-inner {
+            animation: gapBreath 3.6s ease-in-out infinite;
+        }
+
+        @supports not (background-clip: text) {
+            .lyric-char {
+                background-image: none;
+                -webkit-text-fill-color: currentColor;
+                color: white;
+            }
+        }
+
+        @property --lit {
+            syntax: '<number>';
+            inherits: false;
+            initial-value: 0;
+        }
+
+        /* ===== 连接状态：悬浮在播放控件右下角 =====
+           一块同一材质的小玻璃胶囊，右缘与控件右缘对齐、贴在它下沿。
+           横向排布「连接 / 播放器 / IP / 端口 / 协议」，窄屏逐级收起次要字段。
+           pointer-events: none —— 它只是信息，不该吃掉任何交互。 */
+        .conn-bar {
+            position: relative;
+            z-index: 1;
+            flex: 0 0 auto;
+            max-width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 7px 13px;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            line-height: 1;
+            letter-spacing: 0.3px;
+            color: rgba(255, 255, 255, 0.5);
+            background: linear-gradient(135deg,
+                rgba(255, 255, 255, 0.11) 0%,
+                rgba(255, 255, 255, 0.045) 100%);
+            backdrop-filter: blur(16px) saturate(1.6) brightness(1.06);
+            -webkit-backdrop-filter: blur(16px) saturate(1.6) brightness(1.06);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.22),
+                0 10px 24px rgba(0, 0, 0, 0.34);
+            pointer-events: none;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+            /* 同 .player-dock：用 backwards 让动画结束后交出 opacity 的控制权，
+               「不在控件上就变淡」才能生效 */
+            animation: dockIn 1.1s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+            transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .cb-item {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            white-space: nowrap;
+        }
+        .cb-k { color: rgba(255, 255, 255, 0.28); }
+        .cb-v { color: rgba(255, 255, 255, 0.66); }
+        .cb-sep {
+            flex: 0 0 auto;
+            width: 1px;
+            height: 12px;
+            background: rgba(255, 255, 255, 0.12);
+        }
+        /* 版权/来源：比状态信息更弱一档，读起来像脚注而不是状态 */
+        .cb-tail {
+            margin-left: auto;
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 0.94em;
+            letter-spacing: 0.4px;
+        }
+        .sb-dot {
+            flex: 0 0 auto;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.35);
+        }
+        .sb-dot.ok { background: #4ade80; box-shadow: 0 0 8px rgba(74, 222, 128, 0.7); }
+        .sb-dot.err { background: #f87171; box-shadow: 0 0 8px rgba(248, 113, 113, 0.7); }
+        .sb-dot.connecting { background: #fbbf24; animation: sbPulse 1.3s ease-in-out infinite; }
+        @keyframes sbPulse {
+            0%, 100% { opacity: 1; }
+            50%      { opacity: 0.22; }
+        }
+
+        /* ===== 播放控件（嵌在玻璃胶囊右段）=====
+           收藏 / 上一曲 / 播放暂停 / 下一曲 / 音量。
+           自己再套一层极淡的内层玻璃：液态玻璃常见的"玻璃里还有玻璃"，
+           层次感比一整块平板更强。图标统一用描边 SVG（不依赖字体符号）。 */
+        .player-bar {
+            position: relative;
+            z-index: 1;
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 9px;
+            /* 内层玻璃与外层玻璃同心：26 − 10 = 16 */
+            border-radius: var(--r-inner);
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+        }
+        .pb-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            border: 0;
+            border-radius: 50%;
+            background: transparent;
+            color: rgba(255, 255, 255, 0.8);
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+            transition: background-color 0.2s ease, color 0.2s ease, transform 0.12s ease;
+        }
+        .pb-btn:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+        .pb-btn:active { transform: scale(0.9); }
+        .pb-btn svg {
+            display: block;
+            width: 19px;
+            height: 19px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 1.8;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+        /* 播放/暂停：白底圆钮，最醒目 */
+        .pb-main {
+            width: 42px;
+            height: 42px;
+            background: rgba(255, 255, 255, 0.94);
+            color: #101010;
+        }
+        .pb-main:hover { background: #fff; color: #000; }
+        .pb-main svg { width: 20px; height: 20px; stroke-width: 2.1; }
+        /* 播放/暂停两枚图标常驻 DOM，只切显隐（避免每次点击重建节点） */
+        .pb-main .ic-pause { display: none; }
+        .player-bar.playing .pb-main .ic-play { display: none; }
+        .player-bar.playing .pb-main .ic-pause { display: block; }
+        /* 音量图标同理：静音时换成带叉的 */
+        .pb-vol-icon .ic-vol-mute { display: none; }
+        .pb-vol-icon.muted .ic-vol-on { display: none; }
+        .pb-vol-icon.muted .ic-vol-mute { display: block; }
+        /* 已收藏：实心红心 */
+        .pb-btn.on { color: #ff6b8b; }
+        .pb-btn.on svg { fill: currentColor; }
+        .pb-btn.muted { color: rgba(255, 255, 255, 0.38); }
+
+        .pb-volume {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            margin-left: 2px;
+            padding-left: 9px;
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        /* 音量条：与进度条同一套零件（细轨 + 圆形滑块 + --v 驱动），
+           视觉语言统一。关键是命中区做到 22px 高 —— 原生 range 只有 4px 高，
+           想在这么一条线上"抓住"它拖动基本不可能，只能点一下让数值跳过去。 */
+        .pb-range {
+            position: relative;
+            flex: 0 0 auto;
+            width: 84px;
+            height: 22px;
+            cursor: pointer;
+            touch-action: none;
+            --v: 1;                     /* 0~1，唯一音量来源（填充与滑块共用） */
+            transition: opacity 0.2s ease;
+        }
+        .pb-range::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 50%;
+            height: 4px;
+            margin-top: -2px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.2);
+            transition: height 0.18s ease, margin-top 0.18s ease;
+        }
+        .pb-range:hover::before,
+        .pb-range.dragging::before { height: 6px; margin-top: -3px; }
+        .pb-range-fill {
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 50%;
+            height: 4px;
+            margin-top: -2px;
+            border-radius: 999px;
+            background: linear-gradient(90deg, rgba(255, 255, 255, 0.72), #ffffff);
+            transform: scaleX(var(--v, 1));
+            transform-origin: 0 50%;
+            will-change: transform;
+            pointer-events: none;
+            transition: height 0.18s ease, margin-top 0.18s ease;
+        }
+        .pb-range:hover .pb-range-fill,
+        .pb-range.dragging .pb-range-fill { height: 6px; margin-top: -3px; }
+        .pb-range-thumb {
+            position: absolute;
+            top: 50%;
+            left: calc(var(--v, 1) * 100%);
+            width: 11px;
+            height: 11px;
+            margin: -5.5px 0 0 -5.5px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.18s ease;
+        }
+        .pb-range:hover .pb-range-thumb,
+        .pb-range.dragging .pb-range-thumb,
+        .pb-range:focus-visible .pb-range-thumb { opacity: 1; }
+        /* 静音：整条转成低对比，而不是把命中区一起藏掉 */
+        .pb-range.dim::before { background: rgba(255, 255, 255, 0.1); }
+        .pb-range.dim .pb-range-fill { background: rgba(255, 255, 255, 0.34); }
+        .pb-range.dim .pb-range-thumb { background: rgba(255, 255, 255, 0.5); }
+        .pb-range:focus-visible {
+            outline: 2px solid rgba(255, 255, 255, 0.55);
+            outline-offset: 4px;
+            border-radius: 6px;
+        }
+
+        .empty-lyric {
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 1.4rem;
+            filter: blur(0.5px);
+            text-align: center;
+            padding: 40px 0;
+        }
+
+        /* 中等宽度起：进度条独占第二行 —— 封面/曲目与控件共处第一行，
+           这样窄窗口下进度条也不会被挤成一小截（拖动距离够长才好定位）；
+           同时让出状态条上的次要字段。玻璃换回大圆角矩形（两行内容用胶囊会很怪）。 */
+        /* 中窄窗口：整条状态胶囊快贴到玻璃宽度上限了，先把最长的"来源"那句收起 */
+        @media (max-width: 1040px) {
+            .cb-tail { display: none; }
+        }
+
+        @media (max-width: 900px) {
+            /* 只改变量：内层圆角会跟着 --r-glass 自动重算，始终同心 */
+            .dock-wrap { width: calc(100vw - 32px); --dock-lift: 52px; --r-glass: 26px; --pad-glass: 12px; }
+            .player-dock { flex-wrap: wrap; gap: 8px 14px; }
+            .pd-info { flex: 1 1 auto; max-width: none; }
+            .track-progress { order: 3; flex: 1 1 100%; min-width: 0; }
+            .conn-bar { gap: 10px; padding: 6px 11px; }
+            .cb-item.opt, .cb-sep.opt { display: none; }
+        }
+
+        @media (max-width: 600px) {
+            .lyric-line { font-size: 1.5rem; }
+            .lyric-scroll { padding: 0 5%; }
+            .dock-wrap { width: calc(100vw - 20px); --dock-lift: 44px; --r-glass: 20px; --pad-glass: 9px; gap: 7px; }
+            .player-dock { gap: 6px 10px; }
+            .pd-info { gap: 10px; }
+            .album-art { width: 40px; height: 40px; }
+            .track-name { font-size: 0.84rem; }
+            .track-singer { font-size: 0.72rem; }
+            .track-progress { gap: 8px; }
+            .track-progress-time { min-width: 40px; font-size: 0.68rem; }
+            .player-bar { gap: 3px; padding: 3px 5px; }
+            .pb-btn { width: 32px; height: 32px; }
+            .pb-btn svg { width: 17px; height: 17px; }
+            .pb-main { width: 38px; height: 38px; }
+            .pb-volume { gap: 5px; padding-left: 7px; }
+            .pb-range { width: 52px; }
+            /* 极窄：状态条只留「连接 + IP」 */
+            .conn-bar { font-size: 0.64rem; gap: 8px; padding: 5px 9px; }
+            .cb-item.opt2, .cb-sep.opt2, .cb-tail { display: none; }
+        }
+    </style>
+    <!-- ==== WE-INJECT-START ==== -->
+    <!-- 壁纸引擎选项层：由 build.js 自动注入，重跑 build.js 会覆盖本段 -->
+    <link rel="stylesheet" href="we-glue.css">
+    <script src="we-glue.js"></script>
+    <!-- ==== WE-INJECT-END ==== -->
+</head>
+<body>
+    <div class="lyric-stage" id="lyricStage">
+        <!-- 背景图片层：只有同目录存在 backpicture.jpg 时才会淡入（见 initBackPicture） -->
+        <div class="bg-photo" id="bgPhoto" aria-hidden="true"></div>
+        <div class="bg-pulse-layer" id="bgPulseLayer"></div>
+        <div class="bg-art-layer" id="bgArtLayer"></div>
+        <div class="lyric-scroll" id="lyricScroll">
+            <div class="lyric-list" id="lyricList">
+                <div class="empty-lyric">等待播放…</div>
+            </div>
+        </div>
+
+        <!-- 底部悬浮播放控件（iOS 26 Liquid Glass）
+             —— 曲目信息 + 可拖动进度条 + 播放控件同处一块玻璃，
+             绝对定位悬浮，不占布局高度。 -->
+        <div class="dock-wrap" id="dockWrap">
+        <div class="player-dock" id="playerDock">
+            <!-- 液态高光层：跟随指针的一团 + 自主游走的一团（纯装饰） -->
+            <div class="lg-sheen" aria-hidden="true">
+                <i class="s-drift"></i>
+                <i class="s-follow"></i>
+            </div>
+            <div class="pd-info" id="trackInfo">
+                <img class="album-art" id="albumArt" alt="" crossorigin="anonymous" />
+                <div class="track-meta">
+                    <span class="track-name" id="trackName">—</span>
+                    <span class="track-singer" id="trackSinger">—</span>
+                </div>
+            </div>
+            <!-- 进度条：点/拖轨道即定位；--p 是唯一的进度来源（填充与滑块共用） -->
+            <div class="track-progress disabled" id="seekWrap">
+                <span class="track-progress-time" id="progressCur">0:00</span>
+                <div class="track-progress-track" id="seekTrack" role="slider" aria-label="播放进度"
+                     aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" tabindex="-1">
+                    <div class="track-progress-fill" id="progressFill"></div>
+                    <div class="track-progress-thumb" id="seekThumb"></div>
+                </div>
+                <span class="track-progress-time right" id="progressDur">0:00</span>
+            </div>
+            <div class="player-bar" id="playerBar">
+            <button class="pb-btn" id="btnCollect" title="收藏" aria-label="收藏">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+            </button>
+            <button class="pb-btn" id="btnPrev" title="上一曲" aria-label="上一曲">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/></svg>
+            </button>
+            <button class="pb-btn pb-main" id="btnPlay" title="播放 / 暂停" aria-label="播放 / 暂停">
+                <svg class="ic-play" viewBox="0 0 24 24" aria-hidden="true"><polygon points="7 4 20 12 7 20 7 4"/></svg>
+                <svg class="ic-pause" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="5" width="3.4" height="14" rx="1.1"/><rect x="13.6" y="5" width="3.4" height="14" rx="1.1"/></svg>
+            </button>
+            <button class="pb-btn" id="btnNext" title="下一曲" aria-label="下一曲">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+            </button>
+            <div class="pb-volume">
+                <button class="pb-btn pb-vol-icon" id="btnMute" title="静音 / 取消静音" aria-label="静音 / 取消静音">
+                    <svg class="ic-vol-on" viewBox="0 0 24 24" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg>
+                    <svg class="ic-vol-mute" viewBox="0 0 24 24" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="16" y1="9.5" x2="22" y2="15.5"/><line x1="22" y1="9.5" x2="16" y2="15.5"/></svg>
+                </button>
+                <!-- 自绘音量条：命中区 22px（原生 range 只有 4px 高，抓不住），
+                     拖动逻辑与进度条共用同一个控制器 -->
+                <div class="pb-range" id="volRange" role="slider" tabindex="0" aria-label="音量"
+                     aria-valuemin="1" aria-valuemax="100" aria-valuenow="100" aria-valuetext="100%">
+                    <div class="pb-range-fill" id="volFill"></div>
+                    <div class="pb-range-thumb" id="volThumb"></div>
+                </div>
+            </div>
+            </div>
+        </div>
+
+        <!-- 连接状态：贴在播放控件的右下角，右缘与玻璃右缘对齐 -->
+        <div class="conn-bar" id="connBar">
+            <div class="cb-item">
+                <span class="sb-dot connecting" id="sbDot"></span>
+                <span class="cb-v" id="sbState">连接中…</span>
+            </div>
+            <span class="cb-sep"></span>
+            <div class="cb-item opt2"><span class="cb-k">播放器</span><span class="cb-v" id="cbPlayer">—</span></div>
+            <span class="cb-sep opt2"></span>
+            <div class="cb-item"><span class="cb-k">IP</span><span class="cb-v" id="sbIp">—</span></div>
+            <span class="cb-sep opt"></span>
+            <div class="cb-item opt"><span class="cb-k">端口</span><span class="cb-v" id="sbPort">—</span></div>
+            <span class="cb-sep opt"></span>
+            <div class="cb-item opt"><span class="cb-k">协议</span><span class="cb-v">HTTP · SSE</span></div>
+            <span class="cb-tail">使用LX Music开放API，Powered by BiliBili @Iambig191</span>
+        </div>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            const API_BASE = 'http://127.0.0.1:23330';
+            // 注意：/status 与 SSE 订阅的默认 filter 不含 picUrl / collect / volume / mute，
+            // 必须显式指定，否则拿不到封面、收藏态和音量
+            const SSE_FILTER = encodeURIComponent('status,name,singer,albumName,picUrl,progress,duration,playbackRate,collect,volume,mute');
+            const SSE_URL = `${API_BASE}/subscribe-player-status?filter=${SSE_FILTER}`;
+            const LYRIC_ALL_URL = `${API_BASE}/lyric-all`;
+            const STATUS_URL = `${API_BASE}/status?filter=${encodeURIComponent('status,name,singer,albumName,duration,progress,picUrl,playbackRate,collect,volume,mute')}`;
+
+            // 播放控制接口（见 api.txt，均为 GET）
+            const CTRL_PLAY = `${API_BASE}/play`;
+            const CTRL_PAUSE = `${API_BASE}/pause`;
+            const CTRL_NEXT = `${API_BASE}/skip-next`;
+            const CTRL_PREV = `${API_BASE}/skip-prev`;
+            const ctrlVolume = (v) => `${API_BASE}/volume?volume=${Math.round(v)}`;
+            const ctrlMute = (m) => `${API_BASE}/mute?mute=${m ? 'true' : 'false'}`;
+            // /seek 的 offset 是「绝对秒数」（源码校验 0 <= offset <= duration，越界返回 400），
+            // 不是增量；进度条拖动算出的就是这个位置
+            const ctrlSeek = (sec) => `${API_BASE}/seek?offset=${sec.toFixed(3)}`;
+            const CTRL_COLLECT = `${API_BASE}/collect`;
+            const CTRL_UNCOLLECT = `${API_BASE}/uncollect`;
+
+            const BG_ANTICIPATE = 0.25;
+
+            // SSE 的 data 字段是 JSON 编码的字符串（如 data: "playing"），
+            // EventSource 不会自动解码，需要去掉引号；裸值则原样返回
+            function parseEventData(raw) {
+                if (typeof raw !== 'string') return raw;
+                const trimmed = raw.trim();
+                if (trimmed.length >= 2 &&
+                    ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+                     (trimmed.startsWith("'") && trimmed.endsWith("'")))) {
+                    return trimmed.slice(1, -1);
+                }
+                return trimmed;
+            }
+
+            const lyricStageEl = document.getElementById('lyricStage');
+            const bgPulseLayerEl = document.getElementById('bgPulseLayer');
+            const bgPhotoEl = document.getElementById('bgPhoto');
+            const lyricListEl = document.getElementById('lyricList');
+            const lyricScrollEl = document.getElementById('lyricScroll');
+            const trackNameEl = document.getElementById('trackName');
+            const trackSingerEl = document.getElementById('trackSinger');
+            const albumArtEl = document.getElementById('albumArt');
+            const bgArtLayerEl = document.getElementById('bgArtLayer');
+            const progressFillEl = document.getElementById('progressFill');
+            const progressCurEl = document.getElementById('progressCur');
+            const progressDurEl = document.getElementById('progressDur');
+            const seekWrapEl = document.getElementById('seekWrap');
+            const seekTrackEl = document.getElementById('seekTrack');
+            const playerBarEl = document.getElementById('playerBar');
+            const btnPlayEl = document.getElementById('btnPlay');
+            const btnPrevEl = document.getElementById('btnPrev');
+            const btnNextEl = document.getElementById('btnNext');
+            const btnMuteEl = document.getElementById('btnMute');
+            const btnCollectEl = document.getElementById('btnCollect');
+            const volRangeEl = document.getElementById('volRange');
+            const volFillEl = document.getElementById('volFill');
+            const volThumbEl = document.getElementById('volThumb');
+            const dockWrapEl = document.getElementById('dockWrap');
+            const playerDockEl = document.getElementById('playerDock');
+            const connBarEl = document.getElementById('connBar');
+            const sbDotEl = document.getElementById('sbDot');
+            const sbStateEl = document.getElementById('sbState');
+            const sbIpEl = document.getElementById('sbIp');
+            const sbPortEl = document.getElementById('sbPort');
+            const cbPlayerEl = document.getElementById('cbPlayer');
+
+            let lyricLines = [];
+            let lyricLineElements = [];
+            let lyricCharElements = [];
+            // 间奏等待点所在的行号（换行时用来把所有"不该展开"的等待点合拢）
+            let gapLineIndices = [];
+
+            let currentActiveLineIndex = -1;
+
+            // 逐字状态缓存：避免每帧重复写 DOM（-1 未初始化 0 未唱 1 正在唱 2 已唱）
+            let charState = [];
+            let charLit = [];
+
+            let playerStatus = 'stoped';
+
+            // ---- 底部连接状态条 ----
+            let connState = 'connecting';      // connecting | ok | error
+            let connText = '连接中…';
+
+            // ---- 进度条：拖动定位 ----
+            let seeking = false;               // 正在拖动
+            let seekPreviewSec = 0;            // 拖动中的预览位置（秒）
+            let seekUsable = false;            // 时长已知才允许拖动
+            let seekPendingUntil = 0;          // 刚 seek 过：这段时间内忽略权威进度，防止旧值先到把进度条拨回去
+
+            // ---- 播放控件本地态（SSE / /status 会持续校正；点击时先乐观更新） ----
+            let songCollected = false;
+            let volumeValue = 100;
+            let muted = false;
+            let volumeSendTimer = null;
+            let volDragging = false;
+            let lastSentVolume = -1;           // 已发过的音量（去重，避免同一次拖动发两遍）
+            let ctrlPendingUntil = 0;          // 刚点过控件的一小段时间内，不让旧状态把 UI 拨回去
+            // targetProgress 最近一次权威进度（来自 SSE / status）；currentProgress 是本地时钟的每帧推算值
+            let targetProgress = 0;
+            let currentProgress = 0;
+            let progressRafId = null;
+            let progressRunning = false;
+
+            // ---- 本地播放时钟 ----
+            // 为什么不用「把 currentProgress 往 targetProgress 逼近」？
+            // SSE 每 ~250ms 才推一次进度，逼近式平滑会让逐帧推进量变成
+            // 0,0,0,…,0,16x,7x,4x,… 的脉冲（实测 p50 = 0），扫光看起来就是一顿一顿。
+            // 改为：以本地时钟按 playbackRate 连续推进，权威进度只用来「吸收误差」，
+            // 于是逐帧推进量恒定 ≈ 1.0，扫光/律动真正连续。
+            const CLOCK_HARD_ERR = 0.35;   // 误差超过此值 → 视为拖动/切歌，直接对齐
+            const CLOCK_TRIM_TAU = 0.45;   // 速度微调的回零时间常数（秒）
+            const CLOCK_TRIM_CAP = 0.35;   // 速度微调上限（±35%）
+            let clockPos = 0;              // 本地时钟推算出的当前进度（秒）——由积分推进
+            let clockRate = 1;             // 播放速率
+            let clockTrim = 0;             // 速度微调（吸收误差用；位置是它的积分，所以不会有跳变）
+            let clockRunning = false;      // 时钟是否在走（暂停/停止时冻结）
+            let clockInit = false;         // 是否已收到过权威进度（避免用陈旧锚点起跑）
+            let lastClockT = 0;
+
+            let currentSongName = '';
+            let currentSinger = '';
+            let currentPicUrl = '';
+            let lastFetchSongKey = '';
+            let fetchTimer = null;
+
+            let bgChars = [];
+            let bgAnimationId = null;
+            let bgStartTime = 0;
+            let bgCurrentLineIndex = -1;
+            let bgFloat = [];          // 漂移参数缓存（避免每帧读 dataset）
+            let bgRevealPtr = 0;       // 逐字出现指针（字符按时间递增，O(1) 推进）
+            let bgBuildToken = 0;      // 构建代次，作废在途的异步重建
+            let bgBuildTimer = null;
+
+            let statusFetchTimer = null;
+
+            let scrollAnim = null;          // WAAPI 动画对象（位移由合成器线程推进）
+
+            // 行 class 缓存，避免每次换行重写全部 68 行（0 无 1 played 2 active 3 up1 4 up2）
+            let lineClassCache = [];
+            const LINE_CLASS = [null, 'played', 'active', 'upcoming-1', 'upcoming-2'];
+
+            let bgPulseRafId = null;
+            let bgPulseStart = 0;
+            let bgPulseRunning = false;
+            // 律动光晕的强度系数：1 = 常规；有背景图时从 CSS 的 --pulse-k 读一个更小的值，
+            // 免得照片上再叠一层浓雾。CSS 是唯一来源，这里只做缓存。
+            let bgPulseK = 1;
+
+            // ==================== 进度条 ====================
+            // 时间来源与扫光共用同一条本地时钟（currentProgress），因此进度条、
+            // 逐字扫光、等待点三者永远同步，不会出现"条走了字没走"的割裂感。
+            let trackDuration = 0;    // 歌曲总时长（秒）
+            let shownSec = -1;        // 已渲染的秒数：只在整数秒变化时改文本，避免每帧重排
+            let shownDur = -1;
+
+            function fmtTime(sec) {
+                sec = Math.max(0, Math.floor(sec));
+                const h = Math.floor(sec / 3600);
+                const m = Math.floor((sec % 3600) / 60);
+                const s = sec % 60;
+                if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+                return `${m}:${String(s).padStart(2, '0')}`;
+            }
+
+            function updateProgressUI(progress) {
+                if (!seekWrapEl) return;
+                // 拖动期间进度条由预览接管，别让每帧的本地时钟把它拽回去
+                if (seeking) return;
+
+                const usable = trackDuration > 0;
+                if (usable !== seekUsable) {
+                    seekUsable = usable;
+                    seekWrapEl.classList.toggle('disabled', !usable);
+                }
+                // --p（0~1）同时驱动填充与滑块，两者不可能不同步
+                const f = usable ? Math.max(0, Math.min(1, progress / trackDuration)) : 0;
+                seekWrapEl.style.setProperty('--p', f.toFixed(5));
+
+                const sec = Math.floor(Math.max(0, progress));
+                const dur = Math.round(trackDuration);
+                if (sec !== shownSec || dur !== shownDur) {
+                    shownSec = sec;
+                    shownDur = dur;
+                    const durText = dur > 0 ? fmtTime(dur) : '0:00';
+                    if (progressCurEl) progressCurEl.textContent = fmtTime(sec);
+                    if (progressDurEl) progressDurEl.textContent = durText;
+                    if (seekTrackEl) {
+                        seekTrackEl.setAttribute('aria-valuemax', String(dur));
+                        seekTrackEl.setAttribute('aria-valuenow', String(sec));
+                        seekTrackEl.setAttribute('aria-valuetext', `${fmtTime(sec)} / ${durText}`);
+                    }
+                }
+            }
+
+            // ==================== 本地播放时钟 ====================
+            function nowSec() { return performance.now() / 1000; }
+
+            function setClockRate(r) {
+                if (typeof r === 'number' && isFinite(r) && r > 0) clockRate = r;
+            }
+
+            // 推进并返回当前进度。
+            // 位置由「速度积分」得到：速度微调 clockTrim 只影响斜率，
+            // 因此吸收误差时不会出现位置阶跃（这正是 4Hz 微抖的来源）。
+            function clockProgress(now) {
+                if (!clockRunning) return clockPos;
+                let dt = now - lastClockT;
+                if (!(dt > 0)) { lastClockT = now; return clockPos; }
+                if (dt > 0.5) dt = 0.5;              // 标签页被挂起后回来，别一次跳太远
+                clockTrim *= Math.exp(-dt / CLOCK_TRIM_TAU);
+                if (Math.abs(clockTrim) < 1e-4) clockTrim = 0;
+                clockPos += dt * clockRate * (1 + clockTrim);
+                lastClockT = now;
+                return clockPos;
+            }
+
+            function resumeClock() {
+                if (clockRunning) return;
+                if (!clockInit) return;          // 还没有权威进度，先别起跑
+                lastClockT = nowSec();
+                clockTrim = 0;
+                clockRunning = true;
+            }
+
+            // 切歌：进度归零，等第一条权威进度再起跑
+            function resetClock() {
+                clockPos = 0;
+                lastClockT = nowSec();
+                clockTrim = 0;
+                clockRunning = false;
+                clockInit = false;
+                targetProgress = 0;
+                currentProgress = 0;
+                resyncBgReveals(0);
+                // 新歌的时长还没拿到，先清空进度条，等 /status 回来再填
+                trackDuration = 0;
+                shownSec = -1;
+                shownDur = -1;
+                updateProgressUI(0);
+            }
+
+            function freezeClock() {
+                if (!clockRunning) return;
+                clockProgress(nowSec());          // 先推进到此刻
+                clockTrim = 0;
+                clockRunning = false;
+            }
+
+            // 收到权威进度：把它折算成「速度微调」而不是位置偏移
+            function syncClock(p, hard = false) {
+                if (typeof p !== 'number' || !isFinite(p)) return;
+                // 刚拖过进度条：播放器推来的旧进度会在新位置生效前先到一步，
+                // 这段窗口内先别听它的，否则进度条会先被拽回去再弹回来
+                if (!hard && performance.now() < seekPendingUntil) return;
+                const now = nowSec();
+                targetProgress = p;
+                if (!clockInit) {
+                    clockInit = true;
+                    clockPos = p;
+                    lastClockT = now;
+                    clockTrim = 0;
+                } else {
+                    const pred = clockProgress(now);   // 先积分到此刻，再算误差
+                    const err = p - pred;
+                    if (hard || Math.abs(err) > CLOCK_HARD_ERR) {
+                        // 拖动进度 / 切歌 / 长时间丢包：直接对齐
+                        clockPos = p;
+                        lastClockT = now;
+                        clockTrim = 0;
+                        if (hard) resyncBgReveals(p);
+                    } else {
+                        // 让 clockTrim 在 ~CLOCK_TRIM_TAU 内匀速吃掉误差：速度只变几个百分点，肉眼不可见
+                        let t = clockTrim + err / (CLOCK_TRIM_TAU * clockRate);
+                        if (t > CLOCK_TRIM_CAP) t = CLOCK_TRIM_CAP;
+                        else if (t < -CLOCK_TRIM_CAP) t = -CLOCK_TRIM_CAP;
+                        clockTrim = t;
+                    }
+                }
+                // 关键：只要在播放，时钟就必须在走。
+                // 否则进度只能靠事件"跳变"（实测会退化成 0.5 秒一跳），比不修还卡。
+                if (playerStatus === 'playing') {
+                    resumeClock();
+                    if (!progressRunning) startProgressLoop();
+                }
+            }
+
+            // ==================== 每帧循环（唯一权威） ====================
+            function startProgressLoop() {
+                if (progressRunning) return;
+                progressRunning = true;
+                lastClockT = nowSec();
+
+                function frame() {
+                    if (!progressRunning) return;
+                    currentProgress = clockProgress(nowSec());
+                    // 行切换、逐字扫光、逐字抬高、天际屏逐字出现全部由这里驱动
+                    applyProgress(currentProgress);
+                    progressRafId = requestAnimationFrame(frame);
+                }
+                progressRafId = requestAnimationFrame(frame);
+            }
+
+            // 根据进度刷新高亮 / 滚动 / 逐字效果（单一入口，避免多路数据互相拉扯）
+            function applyProgress(progress) {
+                // 进度条与时间文本也要跟着走；放在最前面，
+                // 这样即使还没有歌词（纯音乐 / 歌词加载中）进度条也正常
+                updateProgressUI(progress);
+                if (!lyricLines.length) return;
+                const idx = findActiveLineIndex(progress);
+                if (idx !== currentActiveLineIndex) {
+                    updateHighlight(idx, true);
+                } else if (idx >= 0) {
+                    updateActiveLine(idx, progress);
+                }
+                revealBgChars(progress);
+            }
+
+            function stopProgressLoop() {
+                progressRunning = false;
+                if (progressRafId) {
+                    cancelAnimationFrame(progressRafId);
+                    progressRafId = null;
+                }
+            }
+
+            // ==================== 解析 ====================
+            function parseLrcTag(tag) {
+                const m = tag.match(/^(\d+):(\d+)(?:[.:](\d+))?$/);
+                if (!m) return null;
+                const min = parseInt(m[1], 10);
+                const sec = parseInt(m[2], 10);
+                const frac = m[3] ? parseFloat(`0.${m[3]}`) : 0;
+                return min * 60 + sec + frac;
+            }
+
+            function isAnyListenFormat(text) {
+                return /<\d+,\d+>/.test(text);
+            }
+
+            function parseAnyListenLrc(text) {
+                const rawLines = text.split(/\r?\n/);
+                const rawParsed = [];
+
+                for (let raw of rawLines) {
+                    raw = raw.trim();
+                    if (!raw) continue;
+
+                    const prefixMatch = raw.match(/^\[(\d+:\d+(?:[.:]\d+)?)\]/);
+                    let linePrefixTime = null;
+                    let content = raw;
+
+                    if (prefixMatch) {
+                        linePrefixTime = parseLrcTag(prefixMatch[1]);
+                        content = raw.slice(prefixMatch[0].length);
+                    }
+
+                    const regex = /<(\d+),(\d+)>([^<]*)/g;
+                    const chars = [];
+                    let m;
+                    while ((m = regex.exec(content)) !== null) {
+                        const startMs = parseInt(m[1], 10);
+                        const durationMs = parseInt(m[2], 10);
+                        const char = m[3];
+                        if (char && char.length > 0) {
+                            chars.push({ startMs, durationMs, char });
+                        }
+                    }
+                    if (chars.length === 0) continue;
+
+                    rawParsed.push({
+                        prefixTime: linePrefixTime,
+                        chars,
+                        text: chars.map(c => c.char).join('')
+                    });
+                }
+
+                if (rawParsed.length === 0) return [];
+
+                const allNoPrefix = rawParsed.every(l => l.prefixTime === null);
+                const allFirstStartZero = rawParsed.every(l => l.chars[0].startMs < 100);
+                const needAccumulate = allNoPrefix && allFirstStartZero && rawParsed.length > 1;
+
+                const result = [];
+                let accumTime = 0;
+
+                for (let i = 0; i < rawParsed.length; i++) {
+                    const line = rawParsed[i];
+                    const baseTime = line.prefixTime !== null
+                        ? line.prefixTime
+                        : (needAccumulate ? accumTime : 0);
+
+                    const chars = line.chars.map(c => {
+                        const startSec = needAccumulate
+                            ? baseTime + c.startMs / 1000
+                            : (line.prefixTime !== null
+                                ? line.prefixTime + c.startMs / 1000
+                                : c.startMs / 1000);
+                        const endSec = startSec + c.durationMs / 1000;
+                        return { time: startSec, endTime: endSec, char: c.char };
+                    });
+
+                    chars.sort((a, b) => a.time - b.time);
+                    const firstTime = chars[0].time;
+                    const lastEnd = chars[chars.length - 1].endTime;
+
+                    if (needAccumulate) {
+                        accumTime = lastEnd;
+                    }
+
+                    result.push({
+                        time: firstTime,
+                        endTime: lastEnd,
+                        text: line.text,
+                        chars
+                    });
+                }
+
+                for (let i = 0; i < result.length; i++) {
+                    if (i + 1 < result.length) {
+                        result[i].endTime = result[i + 1].time;
+                    }
+                }
+
+                return result;
+            }
+
+            function parseStandardLrc(text) {
+                const rawLines = text.split(/\r?\n/);
+                const parsed = [];
+
+                for (let raw of rawLines) {
+                    raw = raw.trim();
+                    if (!raw) continue;
+
+                    const tagRegex = /\[(\d+:\d+(?:[.:]\d+)?)\]/g;
+                    const tags = [];
+                    let m;
+                    while ((m = tagRegex.exec(raw)) !== null) {
+                        const t = parseLrcTag(m[1]);
+                        if (t !== null) {
+                            tags.push({ time: t, index: m.index, fullLength: m[0].length });
+                        }
+                    }
+                    if (tags.length === 0) continue;
+
+                    if (tags.length >= 2) {
+                        const chars = [];
+                        for (let i = 0; i < tags.length; i++) {
+                            const start = tags[i].index + tags[i].fullLength;
+                            const end = (i + 1 < tags.length) ? tags[i + 1].index : raw.length;
+                            const char = raw.slice(start, end).trim();
+                            if (char) {
+                                chars.push({ time: tags[i].time, endTime: null, char });
+                            }
+                        }
+                        for (let i = 0; i < chars.length - 1; i++) {
+                            chars[i].endTime = chars[i + 1].time;
+                        }
+                        if (chars.length > 1) {
+                            const firstTime = chars[0].time;
+                            const text = chars.map(c => c.char).join('');
+                            parsed.push({ time: firstTime, text, chars });
+                            continue;
+                        }
+                    }
+
+                    const firstTime = tags[0].time;
+                    const text = raw.replace(/\[\d+:\d+(?:[.:]\d+)?\]/g, '').trim();
+                    if (!text) continue;
+                    parsed.push({ time: firstTime, text, chars: null });
+                }
+
+                if (parsed.length === 0) return [];
+                parsed.sort((a, b) => a.time - b.time);
+
+                for (let i = 0; i < parsed.length; i++) {
+                    const line = parsed[i];
+                    if (i + 1 < parsed.length) {
+                        line.endTime = parsed[i + 1].time;
+                    } else {
+                        if (line.chars && line.chars.length > 0) {
+                            line.endTime = line.chars[line.chars.length - 1].time + 2;
+                        } else {
+                            line.endTime = line.time + 5;
+                        }
+                    }
+                    if (line.chars && line.chars.length > 0) {
+                        const lastChar = line.chars[line.chars.length - 1];
+                        if (lastChar.endTime === null || lastChar.endTime === undefined) {
+                            lastChar.endTime = line.endTime;
+                        }
+                    }
+                }
+
+                return parsed;
+            }
+
+            function parseLyric(text) {
+                if (!text || typeof text !== 'string') return [];
+                if (isAnyListenFormat(text)) {
+                    const lines = parseAnyListenLrc(text);
+                    if (lines.length > 0) {
+                        console.log('[歌词] Any Listen 逐字格式，共', lines.length, '行');
+                        return lines;
+                    }
+                }
+                const lines = parseStandardLrc(text);
+                console.log('[歌词] 标准 LRC 格式，共', lines.length, '行');
+                return lines;
+            }
+
+            // ==================== 间奏等待点（· · ·） ====================
+            // 两句歌词之间（或前奏）空档超过 GAP_MIN 秒时，在中间插入一个
+            // "等待点"行：三个点按进度从左到右依次填满，最后一个点填满的
+            // 那一刻正好是下一句开口的那一刻 —— 和相关音乐 App 的行为一致。
+            const GAP_MIN = 5;        // 触发等待点的最小空档（秒）
+            const GAP_HOLD = 0.25;    // 上一句最后一个字唱完后，让它多停留一下再交给等待点
+
+            // 估算一句"唱完"的时刻。
+            // 注意：Any Listen 格式里 line.endTime 被改写过（等于下一句开始），
+            // 所以必须取最后一个字的 endTime，否则永远算不出真实空档。
+            function lineSingEnd(line) {
+                if (line.chars && line.chars.length) {
+                    const last = line.chars[line.chars.length - 1];
+                    let e = (typeof last.endTime === 'number' && isFinite(last.endTime))
+                        ? last.endTime
+                        : last.time + 0.4;
+                    if (e < line.time) e = line.time + 0.4;
+                    return Math.min(e, line.time + 90);
+                }
+                // 没有逐字信息：按字数粗估一个演唱时长
+                const n = (line.text || '').replace(/\s/g, '').length || 1;
+                return line.time + Math.max(1.0, n * 0.34);
+            }
+
+            function insertGapLines(lines) {
+                if (!lines.length) return lines;
+                const out = [];
+
+                // 前奏：从 0 到第一句之间
+                if (lines[0].time > GAP_MIN) {
+                    out.push({ isGap: true, time: 0, endTime: lines[0].time, text: '', chars: null });
+                }
+
+                for (let i = 0; i < lines.length; i++) {
+                    out.push(lines[i]);
+                    const next = lines[i + 1];
+                    if (!next) continue;
+                    const start = lineSingEnd(lines[i]) + GAP_HOLD;
+                    if (next.time - start > GAP_MIN) {
+                        out.push({ isGap: true, time: start, endTime: next.time, text: '', chars: null });
+                    }
+                }
+                return out;
+            }
+
+            function findActiveLineIndex(progress) {
+                if (!lyricLines.length) return -1;
+                if (progress < lyricLines[0].time) return 0;
+
+                let left = 0, right = lyricLines.length - 1, ans = 0;
+                while (left <= right) {
+                    const mid = Math.floor((left + right) / 2);
+                    if (lyricLines[mid].time <= progress) {
+                        ans = mid;
+                        left = mid + 1;
+                    } else right = mid - 1;
+                }
+                return ans;
+            }
+
+            function updateListPadding() {
+                if (!lyricScrollEl || !lyricListEl) return;
+                const h = lyricScrollEl.clientHeight;
+                if (h === 0) return;
+                const pad = h / 2;
+                lyricListEl.style.paddingTop = `${pad}px`;
+                lyricListEl.style.paddingBottom = `${pad}px`;
+            }
+
+            // ==================== 滚动（交给合成器线程）====================
+            // 为什么不再用 JS 每帧写 scrollTop：那会把滚动和逐字渲染绑在同一条主线程上，
+            // 只要某帧的重排/绘制超过 16ms，滚动插值就被推迟，看起来就是"一顿一顿"；
+            // 而且写 scrollTop 会打断浏览器的滚动合成路径。
+            // 现在改成给 #lyricList 施加 transform 动画（WAAPI）：
+            // transform 动画由合成器线程独立推进，主线程再忙，滚动也照常匀速。
+            // scrollTop 只在动画开始/结束时"结算"一次，保证真实滚动位置与视觉一致。
+
+            // 当前"视觉上"的滚动位置 = 真实 scrollTop - transform 位移
+            function visualScrollTop() {
+                if (!scrollAnim || !lyricListEl) return lyricScrollEl.scrollTop;
+                let m42 = 0;
+                try {
+                    const tr = getComputedStyle(lyricListEl).transform;
+                    if (tr && tr !== 'none') m42 = new DOMMatrixReadOnly(tr).m42;
+                } catch (e) { m42 = 0; }
+                return lyricScrollEl.scrollTop - m42;
+            }
+
+            // 结算：把动画的视觉位置落回真实 scrollTop，并撤掉 transform（视觉零跳变）
+            function settleScroll() {
+                if (!scrollAnim) return lyricScrollEl.scrollTop;
+                const vis = visualScrollTop();
+                scrollAnim.cancel();
+                scrollAnim = null;
+                lyricListEl.style.transform = '';
+                lyricScrollEl.scrollTop = vis;
+                return vis;
+            }
+
+            function animateScrollTo(targetTop, duration = 780) {
+                gapFollowStop();
+                if (!lyricListEl || typeof lyricListEl.animate !== 'function') {
+                    lyricScrollEl.scrollTop = targetTop;
+                    return;
+                }
+                const from = settleScroll();
+                const delta = targetTop - from;
+                if (Math.abs(delta) < 0.5) return;
+
+                scrollAnim = lyricListEl.animate(
+                    [
+                        { transform: 'translate3d(0, 0, 0)' },
+                        { transform: `translate3d(0, ${(-delta).toFixed(2)}px, 0)` }
+                    ],
+                    { duration, easing: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)', fill: 'forwards' }
+                );
+                scrollAnim.onfinish = () => { settleScroll(); };
+            }
+
+            function jumpScrollTo(targetTop) {
+                gapFollowStop();
+                if (scrollAnim) { scrollAnim.cancel(); scrollAnim = null; }
+                if (lyricListEl) lyricListEl.style.transform = '';
+                lyricScrollEl.scrollTop = targetTop;
+            }
+
+            // 不夹取的"让第 index 行居中"的目标。夹取会把信息抹掉，
+            // 而等待点补偿需要的是"布局变了多少"这个差值（见 gapScroll）。
+            function activeLineRawTarget(index) {
+                if (!lyricScrollEl || index < 0 || index >= lyricLineElements.length) return null;
+                const target = lyricLineElements[index];
+                if (!target) return null;
+                const containerHeight = lyricScrollEl.clientHeight;
+                if (!containerHeight) return null;
+                return target.offsetTop + target.offsetHeight / 2 - containerHeight / 2;
+            }
+
+            function clampScrollTop(v) {
+                if (!lyricScrollEl) return v;
+                const max = lyricScrollEl.scrollHeight - lyricScrollEl.clientHeight;
+                if (v < 0) return 0;
+                if (v > max) return max;
+                return v;
+            }
+
+            function activeLineScrollTarget(index) {
+                const raw = activeLineRawTarget(index);
+                return raw == null ? null : clampScrollTop(raw);
+            }
+
+            function scrollToIndex(index, immediate = false) {
+                if (!lyricScrollEl || index < 0 || index >= lyricLineElements.length) return;
+                const containerHeight = lyricScrollEl.clientHeight;
+                if (!containerHeight) return;
+                const scrollTarget = activeLineScrollTarget(index);
+                if (scrollTarget == null) return;
+
+                // 用"视觉位置"判断，动画行进中被新目标打断时也能算准
+                const vis = visualScrollTop();
+
+                // 换歌 / 大跨度跳转：直接定位，避免长距离滑动
+                if (immediate || Math.abs(vis - scrollTarget) > containerHeight * 3) {
+                    jumpScrollTo(scrollTarget);
+                    return;
+                }
+
+                // 已经在目标位置就不重启动画（避免动画互相打断导致的抖动）
+                if (Math.abs(vis - scrollTarget) < 1) return;
+                animateScrollTo(scrollTarget, 780);
+            }
+
+            // ---- 等待点展开/合拢期间的滚动：一次算清，不做事后校正 ----
+            // 为什么不能沿用"换行那一刻算好目标 + 780ms 滑动动画"：
+            // 等待点让开/合上会在 620ms 内把它下方的歌词整体推移几十像素，
+            // 于是动画的目标在起步那一刻就过期了 —— 动画停下时必然偏几十像素，
+            // 只能再补一次校正滚动。用户看到的就是"过冲 + 一个校正的动作"。
+            // 做法：把滚动拆成两个显式分量，逐帧直接写 scrollTop：
+            //   位移 = 起手位置
+            //        + 换行滑动（起手位置 → 过渡开始时的目标；780ms 缓出，与普通换行同一条曲线）
+            //        + 布局位移（"当前目标 − 过渡开始时的目标"，逐帧实测）
+            // 布局位移本身是被 CSS 过渡平滑驱动的，所以逐帧补偿同样平滑、并且零滞后；
+            // 歌词在整个过渡期间都待在正中，过渡结束时也不需要任何校正。
+            const GAP_GLIDE_MS = 780;
+            const GAP_FOLLOW_TAIL = 180;   // 滑动结束后再多跟一会儿收尾
+            let gapFollow = null;
+
+            function gapFollowStop() {
+                if (gapFollow) {
+                    if (gapFollow.raf) cancelAnimationFrame(gapFollow.raf);
+                    gapFollow = null;
+                }
+            }
+
+            // 与 WAAPI 用的 cubic-bezier(0.25, 0.46, 0.45, 0.94) 完全一致的缓动。
+            // 三次贝塞尔没有解析反函数，用二分法反解 t（每帧十几次运算，可忽略）。
+            function easeOutGlide(x) {
+                if (x <= 0) return 0;
+                if (x >= 1) return 1;
+                const bx = (t) => { const u = 1 - t; return 3 * u * u * t * 0.25 + 3 * u * t * t * 0.45 + t * t * t; };
+                const by = (t) => { const u = 1 - t; return 3 * u * u * t * 0.46 + 3 * u * t * t * 0.94 + t * t * t; };
+                let lo = 0, hi = 1;
+                for (let i = 0; i < 18; i++) {
+                    const t = (lo + hi) / 2;
+                    if (bx(t) < x) lo = t; else hi = t;
+                }
+                return by((lo + hi) / 2);
+            }
+
+            function gapScroll(index) {
+                if (!lyricScrollEl || !lyricListEl) return;
+                const containerHeight = lyricScrollEl.clientHeight;
+                if (!containerHeight) return;
+                const raw0 = activeLineRawTarget(index);
+                if (raw0 == null) return;
+
+                gapFollowStop();
+                // 起手：结算掉在飞的 WAAPI 动画，拿到当前视觉位置（零跳变）。
+                // 之后本段滚动完全由下面的循环独占，不再有第二个人写 scrollTop。
+                const from = settleScroll();
+                const delta = clampScrollTop(raw0) - from;
+                const state = {
+                    raf: 0,
+                    index,
+                    from,
+                    delta,
+                    raw0,
+                    t0: performance.now(),
+                    span: GAP_GLIDE_MS,
+                    // 本来就基本居中时不需要滑动，只要补偿布局位移
+                    glide: Math.abs(delta) >= 1
+                };
+                gapFollow = state;
+
+                const step = () => {
+                    if (gapFollow !== state) return;      // 已被新的换行/用户滚动接管
+                    const now = performance.now();
+                    const el = now - state.t0;
+                    const e = state.glide ? easeOutGlide(el / state.span) : 1;
+                    const raw = activeLineRawTarget(state.index);
+                    const extra = (raw == null) ? 0 : (raw - state.raw0);
+                    // 注意：extra 用「未夹取」的差值，越界交给浏览器自然夹取
+                    lyricScrollEl.scrollTop = state.from + state.delta * e + extra;
+                    if (el < state.span + GAP_FOLLOW_TAIL) {
+                        state.raf = requestAnimationFrame(step);
+                    } else {
+                        gapFollow = null;
+                    }
+                };
+                state.raf = requestAnimationFrame(step);
+            }
+
+            // 行状态码：0 无 / 1 played / 2 active / 3 upcoming-1 / 4 upcoming-2
+            function lineStateCode(idx, activeIndex) {
+                if (idx === activeIndex) return 2;
+                if (idx === activeIndex + 1) return 3;
+                if (idx === activeIndex + 2) return 4;
+                if (idx < activeIndex) return 1;
+                return 0;
+            }
+
+            // 只改"真正变了"的那几行（原来每换一行要重写全部行，几十上百次 class 操作）
+            function updateLineClasses(activeIndex) {
+                const n = lyricLineElements.length;
+                for (let i = 0; i < n; i++) {
+                    const want = lineStateCode(i, activeIndex);
+                    if (lineClassCache[i] === want) continue;
+                    const el = lyricLineElements[i];
+                    if (el) {
+                        const prev = lineClassCache[i];
+                        if (prev) el.classList.remove(LINE_CLASS[prev]);
+                        if (want) el.classList.add(LINE_CLASS[want]);
+                    }
+                    lineClassCache[i] = want;
+                }
+            }
+
+            // ==================== 逐字抬高（WAAPI） ====================
+            // Apple Music 式缓动：起唱的字沿一条「慢起 → 中段走完位移 → 长尾缓收」
+            // 的曲线柔和地浮起来，没有蓄力下沉、也没有过冲回弹，
+            // 因此不会有"啪"地跳上去的生硬感，而是像被音浪缓缓托起。
+            const LIFT_REST = 'translateY(-0.115em) scale(1.015)';
+            const LIFT_FROM = 'translateY(0em) scale(1)';
+            const LIFT_DURATION = 520;
+            const LIFT_EASING = 'cubic-bezier(0.42, 0, 0.16, 1)';
+
+            function liftChar(el) {
+                if (!el) return;
+                if (el._liftAnim) {
+                    try { el._liftAnim.cancel(); } catch (e) { }
+                    el._liftAnim = null;
+                }
+                el.style.transform = LIFT_REST;
+                if (typeof el.animate !== 'function') return;
+                try {
+                    const a = el.animate(
+                        [{ transform: LIFT_FROM }, { transform: LIFT_REST }],
+                        {
+                            duration: LIFT_DURATION,
+                            easing: LIFT_EASING
+                        }
+                    );
+                    el._liftAnim = a;
+                    a.onfinish = () => {
+                        el.style.transform = LIFT_REST;
+                        try { a.cancel(); } catch (e) { }
+                        if (el._liftAnim === a) el._liftAnim = null;
+                    };
+                } catch (e) { }
+            }
+
+            function dropChar(el) {
+                if (!el) return;
+                if (el._liftAnim) {
+                    try { el._liftAnim.cancel(); } catch (e) { }
+                    el._liftAnim = null;
+                }
+                el.style.transform = '';
+            }
+
+            // 等待点的水平落点。
+            // 用户要的是"靠歌词的左边界"，不是"靠屏幕的左边界"：大屏上歌词块整体
+            // 居中，若把等待点行贴到容器左缘，它会离歌词几百像素远。
+            // 做法：量出最长歌词行的布局宽度（用 offsetWidth —— 布局宽度，不受
+            // scale 影响），让第一个点的左缘落在"这行的左缘再往左一点"的位置，
+            // 再把反推出来的盒子宽度写进 --gap-w（等待点行用它当宽度、居中排布）。
+            const GAP_LEFT_NUDGE = 22;   // 相对歌词左缘再左移一点（仍在歌词范围内）
+            const GAP_INNER_PAD = 18;    // 必须与 .gap-inner 的横向 padding 一致
+
+            function updateGapWidth() {
+                if (!lyricListEl || !gapLineIndices.length) return;
+                const listW = lyricListEl.clientWidth;
+                if (listW <= 0) return;
+
+                // 参考宽度 = 最长的歌词行
+                let refW = 0;
+                for (let i = 0; i < lyricLineElements.length; i++) {
+                    const line = lyricLines[i];
+                    if (!line || line.isGap) continue;
+                    const el = lyricLineElements[i];
+                    if (!el) continue;
+                    const w = el.offsetWidth;
+                    if (w > refW) refW = w;
+                }
+                if (refW <= 0) refW = listW * 0.6;
+                refW = Math.min(refW, listW * 0.86);  // 单行异常长时别把点顶到屏幕边
+
+                const center = listW / 2;
+                // 第一个点的目标左缘：歌词左缘 − 一点点；不越出容器左缘，也不越过中线
+                let dotsLeft = center - refW / 2 - GAP_LEFT_NUDGE;
+                dotsLeft = Math.max(GAP_INNER_PAD, Math.min(dotsLeft, center - 24));
+
+                // 盒子居中 → 盒子左缘 = 点左缘 − 内层左内边距；再反推宽度
+                const boxLeft = dotsLeft - GAP_INNER_PAD;
+                const w = Math.max(1, listW - 2 * boxLeft);
+                lyricListEl.style.setProperty('--gap-w', w.toFixed(1) + 'px');
+            }
+
+            // 等待点行的「展开 / 合拢」——显式驱动，不依赖行 class 缓存。
+            // 展开时上下两句歌词被平滑地推开、三个点在空隙里浮现；
+            // 合拢时两句合上、三个点随裁切一起消失。
+            // 直接读 DOM 判断当前状态（而不是缓存标志），因此每帧调用都是自愈的：
+            // 无论之前被什么意外打断，只要"该展开"就会在下一次调用时纠正回来。
+            function setGapOpen(lineIdx, open) {
+                const el = lyricLineElements[lineIdx];
+                if (!el) return;
+                const line = lyricLines[lineIdx];
+                if (!line || !line.isGap) return;
+                open = !!open;
+                if (el.classList.contains('open') === open) return;
+                el.classList.toggle('open', open);
+            }
+
+            // 等待点：三个圆点「一个接一个」点亮（离散，不做圆点内部的扫光）。
+            // 把等待时长三等分：进入第 k 段就点亮第 k 个点，
+            // 所以看得见的台阶就是「1 个 → 2 个 → 3 个」，等待结束时三个全亮。
+            // （注意不要写成「第 i 个点在 (i+1)/3 才亮」——第三个点的阈值会落在
+            //   f>=1 上，而那一刻本行恰好失活，于是第三个点永远不会亮。）
+            function updateGapLine(lineIdx, progress) {
+                const dots = lyricCharElements[lineIdx];
+                if (!dots || !dots.length) return;
+                const line = lyricLines[lineIdx];
+                if (!line) return;
+                const dur = Math.max(0.001, line.endTime - line.time);
+                const f = Math.max(0, Math.min(1, (progress - line.time) / dur));
+                const overall = f * dots.length;
+                let lt = charLit[lineIdx];
+                if (!lt || lt.length !== dots.length) {
+                    lt = charLit[lineIdx] = new Float32Array(dots.length).fill(-1);
+                }
+                for (let i = 0; i < dots.length; i++) {
+                    // 整颗点亮 / 整颗熄灭，没有中间态
+                    const lit = overall >= i ? 1 : 0;
+                    if (lit !== lt[i]) {
+                        lt[i] = lit;
+                        dots[i].classList.toggle('lit', lit === 1);
+                    }
+                }
+            }
+
+            // 当前行的逐字状态：扫光（--lit）+ 抬高
+            // 只在状态真正变化时写 DOM；抬字一旦开始就保持到整句结束
+            function updateActiveLine(lineIdx, progress) {
+                const line = lyricLines[lineIdx];
+                if (!line) return;
+                if (line.isGap) {
+                    // 等待点：先确保展开（上下两句歌词让开），再按点推进点亮
+                    setGapOpen(lineIdx, true);
+                    updateGapLine(lineIdx, progress);
+                    return;
+                }
+
+                const charEls = lyricCharElements[lineIdx];
+                if (!charEls || !charEls.length) return;
+                if (!line.chars || !line.chars.length) return;
+
+                const chars = line.chars;
+                const n = Math.min(charEls.length, chars.length);
+                let st = charState[lineIdx];
+                if (!st || st.length !== n) {
+                    st = charState[lineIdx] = new Int8Array(n);
+                    charLit[lineIdx] = new Float32Array(n).fill(-1);
+                }
+                const lt = charLit[lineIdx];
+
+                for (let i = 0; i < n; i++) {
+                    const el = charEls[i];
+                    const c = chars[i];
+                    if (!el || !c) continue;
+
+                    const span = c.endTime - c.time;
+                    let state;
+                    let lit;
+                    if (progress >= c.endTime) {
+                        state = 2; lit = 1;
+                    } else if (progress >= c.time) {
+                        state = 1;
+                        lit = span > 0.001 ? Math.min(1, (progress - c.time) / span) : 1;
+                    } else {
+                        state = 0; lit = 0;
+                    }
+
+                    if (state !== st[i]) {
+                        const prevState = st[i];
+                        st[i] = state;
+                        el.classList.remove('unsung', 'singing', 'sung');
+                        el.classList.add(state === 0 ? 'unsung' : (state === 1 ? 'singing' : 'sung'));
+                        // 刚起唱：弹一下；唱完保持抬起不还原（直到整句播完换行）
+                        if (state > 0 && prevState === 0) liftChar(el);
+                        else if (state === 0) dropChar(el);
+                    }
+                    if (lit !== lt[i]) {
+                        lt[i] = lit;
+                        el.style.setProperty('--lit', lit);
+                    }
+                }
+            }
+
+            // 整句播完（或切行）时还原逐字状态
+            function resetLineChars(lineIdx) {
+                if (lineIdx < 0) return;
+                // 离开等待点行就合拢：上下两句歌词重新合上，三个点被裁掉
+                setGapOpen(lineIdx, false);
+                if (charState[lineIdx]) charState[lineIdx].fill(0);
+                if (charLit[lineIdx]) charLit[lineIdx].fill(0);
+                const els = lyricCharElements[lineIdx];
+                if (!els) return;
+                for (let i = 0; i < els.length; i++) {
+                    const el = els[i];
+                    // 等待点的圆点：只把点亮状态收回（不进逐字扫光/抬字那套）
+                    if (el.classList.contains('gap-dot')) {
+                        el.classList.remove('lit');
+                        continue;
+                    }
+                    el.classList.remove('singing', 'sung');
+                    if (!el.classList.contains('unsung')) el.classList.add('unsung');
+                    el.style.setProperty('--lit', 0);
+                    dropChar(el);
+                }
+            }
+
+            function updateHighlight(activeIndex, forceScroll = false) {
+                if (!lyricLineElements.length) return;
+                if (activeIndex < 0) activeIndex = 0;
+                if (activeIndex >= lyricLineElements.length) activeIndex = lyricLineElements.length - 1;
+
+                const prevIndex = currentActiveLineIndex;
+                const changed = (prevIndex !== activeIndex);
+
+                if (!changed) {
+                    updateActiveLine(activeIndex, currentProgress);
+                    if (forceScroll) scrollToIndex(activeIndex);
+                    return;
+                }
+
+                currentActiveLineIndex = activeIndex;
+                updateLineClasses(activeIndex);
+
+                // 上一句整句播完 → 逐字状态还原
+                if (prevIndex >= 0) resetLineChars(prevIndex);
+                // 新的一句从零开始重新长出来
+                resetLineChars(activeIndex);
+
+                // 保险：把所有「不该展开」的等待点行合拢
+                // （跳转、换歌重取歌词之后都不会留下半开/卡住的等待点）
+                for (let k = 0; k < gapLineIndices.length; k++) {
+                    const gi = gapLineIndices[k];
+                    if (gi !== activeIndex) setGapOpen(gi, false);
+                }
+
+                // 天际屏换句
+                if (lyricLines[activeIndex]) buildBackgroundArt(activeIndex);
+
+                updateActiveLine(activeIndex, currentProgress);
+
+                // 等待点行的展开/合拢会在 620ms 内把它下方的歌词整体推移几十像素：
+                // 这时不能用"一次性算好目标的滑动动画"（目标会过期 → 结束后偏几十像素
+                // → 只能再补一次校正，看起来就是过冲）。改为这一段时间里连续跟随居中。
+                const activeIsGap = !!(lyricLines[activeIndex] && lyricLines[activeIndex].isGap);
+                const prevIsGap = !!(prevIndex >= 0 && lyricLines[prevIndex] && lyricLines[prevIndex].isGap);
+                if (activeIsGap || prevIsGap) {
+                    requestAnimationFrame(() => { if (currentActiveLineIndex === activeIndex) gapScroll(activeIndex); });
+                } else {
+                    requestAnimationFrame(() => scrollToIndex(activeIndex));
+                }
+            }
+
+            // ==================== 专辑封面 & 取色 ====================
+            function updateAlbumArt(picUrl) {
+                picUrl = parseEventData(picUrl);
+                if (!picUrl || picUrl === 'null' || picUrl === 'undefined') return;
+                if (picUrl === currentPicUrl) return;
+                currentPicUrl = picUrl;
+                console.log('[封面] 更新:', picUrl.slice(0, 80));
+                loadAlbumArt(picUrl, true);
+            }
+
+            // 加载封面：优先带 crossorigin（可取色），失败再去掉 crossorigin 重试（至少能显示）
+            function loadAlbumArt(url, withCors) {
+                const handleLoad = () => {
+                    albumArtEl.classList.add('visible');
+                    if (!withCors) {
+                        // 无 CORS 的图片无法在 canvas 取色 → 用歌名派生的兜底色
+                        applyBgColor(fallbackColorFromName(currentSongName));
+                        return;
+                    }
+                    extractColorFromImage(albumArtEl).then(color => {
+                        if (color) {
+                            console.log('[取色] 主色:', color.r, color.g, color.b);
+                            applyBgColor(color);
+                        } else {
+                            applyBgColor(fallbackColorFromName(currentSongName));
+                        }
+                    });
+                };
+
+                const handleError = () => {
+                    console.warn('[封面] 图片加载失败 (crossorigin=' + withCors + ')');
+                    if (withCors) {
+                        loadAlbumArt(url, false);   // 图床不支持 CORS，退回纯显示
+                    } else {
+                        albumArtEl.classList.remove('visible');
+                        applyBgColor(fallbackColorFromName(currentSongName));
+                    }
+                };
+
+                if (withCors) albumArtEl.setAttribute('crossorigin', 'anonymous');
+                else albumArtEl.removeAttribute('crossorigin');
+                albumArtEl.onload = handleLoad;
+                albumArtEl.onerror = handleError;
+                albumArtEl.src = url;
+
+                // 命中的缓存图片可能不触发 onload
+                if (albumArtEl.complete && albumArtEl.naturalWidth > 0) handleLoad();
+            }
+
+            // 从图片提取主色（需要 CORS 可用，酷狗图床已返回 Access-Control-Allow-Origin: *）
+            function extractColorFromImage(imgEl) {
+                return new Promise((resolve) => {
+                    try {
+                        const canvas = document.createElement('canvas');
+                        const size = 32;
+                        canvas.width = size;
+                        canvas.height = size;
+                        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                        ctx.drawImage(imgEl, 0, 0, size, size);
+                        const data = ctx.getImageData(0, 0, size, size).data;
+
+                        let r = 0, g = 0, b = 0, count = 0;
+                        // 以"饱和度"为权重的平均，跳过近黑/近白，取到的颜色更像封面主色
+                        for (let i = 0; i < data.length; i += 4) {
+                            const rr = data[i], gg = data[i + 1], bb = data[i + 2], aa = data[i + 3];
+                            if (aa < 128) continue;
+                            const lum = 0.299 * rr + 0.587 * gg + 0.114 * bb;
+                            if (lum < 20 || lum > 235) continue;
+                            const mx = Math.max(rr, gg, bb), mn = Math.min(rr, gg, bb);
+                            const sat = mx === 0 ? 0 : (mx - mn) / mx;
+                            const w = 0.35 + sat;
+                            r += rr * w; g += gg * w; b += bb * w;
+                            count += w;
+                        }
+
+                        if (count === 0) { resolve(null); return; }
+                        resolve({ r: Math.round(r / count), g: Math.round(g / count), b: Math.round(b / count) });
+                    } catch (e) {
+                        console.warn('[取色] 失败（可能跨域）:', e.message);
+                        resolve(null);
+                    }
+                });
+            }
+
+            // 保证光晕始终看得见：亮度不足就提亮，偏灰就增饱和
+            function vividColor(color) {
+                let { r, g, b } = color;
+                const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+                if (lum < 80) {
+                    const k = 80 / Math.max(1, lum);
+                    r = Math.round(r * k); g = Math.round(g * k); b = Math.round(b * k);
+                } else if (lum > 200) {
+                    const k = 200 / lum;
+                    r = Math.round(r * k); g = Math.round(g * k); b = Math.round(b * k);
+                }
+                const mid = (Math.max(r, g, b) + Math.min(r, g, b)) / 2;
+                const boost = 1.4;
+                r = Math.min(255, Math.max(0, Math.round(mid + (r - mid) * boost)));
+                g = Math.min(255, Math.max(0, Math.round(mid + (g - mid) * boost)));
+                b = Math.min(255, Math.max(0, Math.round(mid + (b - mid) * boost)));
+                return { r, g, b };
+            }
+
+            // 取色失败时的兜底色：由歌名派生，保证换歌背景色也会变
+            function fallbackColorFromName(name) {
+                let h = 0;
+                const s = name || 'music';
+                for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+                return hslToRgb(h / 360, 0.62, 0.5);
+            }
+
+            function hslToRgb(h, s, l) {
+                const k = n => (n + h * 12) % 12;
+                const a = s * Math.min(l, 1 - l);
+                const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+                return { r: Math.round(f(0) * 255), g: Math.round(f(8) * 255), b: Math.round(f(4) * 255) };
+            }
+
+            function applyBgColor(color) {
+                const { r, g, b } = vividColor(color);
+                const rgba1 = `rgba(${r}, ${g}, ${b}, 0.72)`;
+                const rgba2 = `rgba(${Math.round(r * 0.5)}, ${Math.round(g * 0.5)}, ${Math.round(b * 0.5)}, 0.42)`;
+                const transparent = `rgba(${r}, ${g}, ${b}, 0)`;
+
+                bgPulseLayerEl.style.background =
+                    `radial-gradient(circle at 50% 45%, ${rgba1}, ${rgba2} 40%, ${transparent} 70%)`;
+
+                const stageR = Math.round(r * 0.3 + 8);
+                const stageG = Math.round(g * 0.3 + 8);
+                const stageB = Math.round(b * 0.3 + 14);
+                lyricStageEl.style.background =
+                    `radial-gradient(circle at 50% 45%, rgba(${stageR}, ${stageG}, ${stageB}, 0.95), rgba(6, 6, 10, 0.99) 75%)`;
+            }
+
+            // ==================== 背景律动 ====================
+            function startBgPulse() {
+                if (bgPulseRunning) return;
+                bgPulseRunning = true;
+                bgPulseStart = performance.now();
+
+                function frame(now) {
+                    if (!bgPulseRunning) return;
+                    const t = (now - bgPulseStart) / 1000;
+                    const s = Math.sin(t * 1.15);
+                    const s2 = Math.sin(t * 2.3);
+                    const scale = 1 + s * 0.08 + s2 * 0.025;
+                    const opacity = (0.62 + s * 0.14) * bgPulseK;
+                    bgPulseLayerEl.style.transform = `scale(${scale.toFixed(4)})`;
+                    bgPulseLayerEl.style.opacity = opacity.toFixed(3);
+                    bgPulseRafId = requestAnimationFrame(frame);
+                }
+                bgPulseRafId = requestAnimationFrame(frame);
+            }
+
+            function stopBgPulse() {
+                bgPulseRunning = false;
+                if (bgPulseRafId) {
+                    cancelAnimationFrame(bgPulseRafId);
+                    bgPulseRafId = null;
+                }
+            }
+
+            // ==================== 背景艺术字 ====================
+            // 漂移幅度上限：摆放时按「最坏情况」预留，保证
+            //   ① 任何一段在屏幕外的部分都远不到它自己的一半；
+            //   ② 相邻两段永远不会压到一起。
+            const BG_OX = 6, BG_AX = 12;    // 横向：固定偏移 ±6，正弦振幅 ≤12
+            const BG_OY = 6, BG_AY = 8;     // 纵向
+            const BG_ROT_DEG = 5.5;         // 旋转最大角度
+            const BG_DX_MAX = BG_OX + BG_AX;   // 横向最大位移
+            const BG_DY_MAX = BG_OY + BG_AY;   // 纵向最大位移
+            const BG_PAD_X = BG_DX_MAX + 10;   // 10 ≈ 旋转后的包围盒增量
+            const BG_PAD_Y = BG_DY_MAX + 10;
+
+            function ovlArea(a, b) {
+                const w = Math.min(a.r, b.r) - Math.max(a.l, b.l);
+                const h = Math.min(a.b, b.b) - Math.max(a.t, b.t);
+                return (w > 0 && h > 0) ? w * h : 0;
+            }
+
+            // 摆放：按「真实测量出的宽高」做不重叠贪心布局。
+            // 为什么必须测量：Any Listen 歌词里一个 <start,dur> 片段可能是一整个
+            // 短语（如 "Welcome "），宽度可达字号的十倍以上；
+            // 按"字号≈宽度"去估算，必然既甩出屏幕又互相压叠。
+            function placeBgChars(boxes, W, H) {
+                const out = new Array(boxes.length).fill(null);
+                const order = [];
+                for (let i = 0; i < boxes.length; i++) order.push(i);
+                // 先摆最大的（最难放）
+                order.sort((a, b) => boxes[b].w * boxes[b].h - boxes[a].w * boxes[a].h);
+
+                // 焦点歌词所在的中心区域：尽量让开
+                const safeW = W * 0.34, safeH = H * 0.36;
+                const safe = {
+                    l: (W - safeW) / 2, t: (H - safeH) / 2,
+                    r: (W + safeW) / 2, b: (H + safeH) / 2
+                };
+
+                const kept = [];
+                for (let k = 0; k < order.length; k++) {
+                    const i = order[k];
+                    const w = boxes[i].w, h = boxes[i].h;
+                    // 允许范围已包含"漂移到最远端"的余量，所以任何时刻都不会有一半以上出屏
+                    let loX = BG_PAD_X, hiX = W - w - BG_PAD_X;
+                    let loY = BG_PAD_Y, hiY = H - h - BG_PAD_Y;
+                    if (hiX < loX) loX = hiX = Math.max(0, (W - w) / 2);
+                    if (hiY < loY) loY = hiY = Math.max(0, (H - h) / 2);
+
+                    let best = null, bestPenalty = Infinity;
+                    for (let attempt = 0; attempt < 180; attempt++) {
+                        const x = loX + Math.random() * (hiX - loX);
+                        const y = loY + Math.random() * (hiY - loY);
+                        const r = {
+                            l: x - BG_PAD_X, t: y - BG_PAD_Y,
+                            r: x + w + BG_PAD_X, b: y + h + BG_PAD_Y
+                        };
+                        let pen = 0;
+                        for (let q = 0; q < kept.length; q++) pen += ovlArea(r, kept[q]);
+                        pen += ovlArea(r, safe) * 0.75;
+                        if (pen <= 0) { best = { x, y }; bestPenalty = 0; break; }
+                        if (pen < bestPenalty) { bestPenalty = pen; best = { x, y }; }
+                    }
+                    out[i] = best;
+                    if (best) {
+                        kept.push({
+                            l: best.x - BG_PAD_X, t: best.y - BG_PAD_Y,
+                            r: best.x + w + BG_PAD_X, b: best.y + h + BG_PAD_Y
+                        });
+                    }
+                }
+                return out;
+            }
+
+            function clearBgChars() {
+                if (bgAnimationId) {
+                    cancelAnimationFrame(bgAnimationId);
+                    bgAnimationId = null;
+                }
+                if (bgBuildTimer) {
+                    clearTimeout(bgBuildTimer);
+                    bgBuildTimer = null;
+                }
+                bgBuildToken++;            // 作废所有在途的异步回调
+                bgChars = [];
+                bgFloat = [];
+                bgRevealPtr = 0;
+                bgArtLayerEl.innerHTML = '';
+                bgArtLayerEl.classList.remove('visible');
+            }
+
+            function buildBackgroundArt(lineIdx) {
+                const line = lyricLines[lineIdx];
+
+                // 同一句不重复重建（避免闪烁）
+                if (bgCurrentLineIndex === lineIdx && bgArtLayerEl.children.length > 0) return;
+
+                // 间奏等待点没有歌词文本，但背景要换成"音符图标"（见 createBgChars），
+                // 所以这里不再提前 return，而是走下面统一的交叉过渡路径。
+                if (!line || (!line.text && !line.isGap)) {
+                    bgCurrentLineIndex = lineIdx;
+                    clearBgChars();
+                    return;
+                }
+                bgCurrentLineIndex = lineIdx;
+
+                // 旧批立刻开始淡出（0.42s），新批在同一时刻就建出来：
+                // 这样新句第一段的浮现时刻 = 它真正被唱到的时刻，
+                // 不会因为"等旧批淡完再建"而让整句挤在一起冒出来。
+                const old = bgArtLayerEl.lastElementChild;
+                if (old) {
+                    old.classList.add('fade-out');
+                    setTimeout(() => {
+                        if (old.parentNode === bgArtLayerEl) old.remove();
+                    }, 460);
+                }
+
+                if (bgAnimationId) { cancelAnimationFrame(bgAnimationId); bgAnimationId = null; }
+                bgBuildToken++;          // 换批代次（也便于外部探针识别"这是新的一批"）
+                bgChars = [];
+                bgFloat = [];
+                bgRevealPtr = 0;
+                createBgChars(line);
+            }
+
+            // 间奏期间背景用的音符图标（替代歌词）
+            const GAP_NOTES = ['🎵', '♪', '♫', '♩', '~', '🎶', '♬'];
+
+            function createBgChars(line) {
+                const text = line.text || '';
+                const chars = (line.chars && line.chars.length > 0) ? line.chars : null;
+
+                let charList;
+                if (line.isGap) {
+                    // 间奏等待点：这段没有歌词可显示，就用一串音符图标代替，
+                    // 让"这一段没人唱"本身成为一种画面。
+                    // 只在等待开始后的一小段时间里陆续浮现，之后保持漂浮——
+                    // 这样几十秒的长间奏也不会让背景一直空着。
+                    const dur = Math.max(1.2, (line.endTime || 0) - line.time);
+                    const spread = Math.min(dur * 0.42, 9);
+                    const n = GAP_NOTES.length;
+                    charList = [];
+                    for (let i = 0; i < n; i++) {
+                        charList.push({
+                            char: GAP_NOTES[i],
+                            revealTime: line.time - BG_ANTICIPATE + spread * ((i + 1) / (n + 1)),
+                            isNote: true
+                        });
+                    }
+                } else if (chars) {
+                    charList = [];
+                    for (let i = 0; i < chars.length; i++) {
+                        const c = chars[i];
+                        if (!c || !c.char) continue;
+                        charList.push({ char: c.char, revealTime: c.time - BG_ANTICIPATE });
+                    }
+                } else {
+                    // 标准 LRC 没有逐字时间：按字数把整句摊到它的演唱时长上，
+                    // 这样"唱到哪个字就出现哪个字"的效果对纯 LRC 也成立，
+                    // 而不是整句字一次性全冒出来。
+                    const extracted = (text || '').match(/[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7afA-Za-z0-9]/g) || [];
+                    const n = extracted.length;
+                    const rawDur = (typeof line.endTime === 'number' && isFinite(line.endTime))
+                        ? (line.endTime - line.time) : 0;
+                    const dur = Math.max(0.9, Math.min(rawDur > 0 ? rawDur : n * 0.34, 14));
+                    charList = extracted.map((ch, i) => ({
+                        char: ch,
+                        revealTime: line.time - BG_ANTICIPATE + dur * (i / Math.max(1, n)) * 0.92
+                    }));
+                }
+
+                if (charList.length === 0) return;
+
+                // 保证 revealTime 递增，revealBgChars 才能用单指针 O(1) 推进
+                charList.sort((a, b) => {
+                    const ta = a.revealTime === null ? Infinity : a.revealTime;
+                    const tb = b.revealTime === null ? Infinity : b.revealTime;
+                    return ta - tb;
+                });
+
+                const W = window.innerWidth;
+                const H = window.innerHeight;
+
+                const batch = document.createElement('div');
+                batch.className = 'bg-batch';
+                bgArtLayerEl.appendChild(batch);
+                bgArtLayerEl.classList.add('visible');
+
+                bgChars = [];
+                bgFloat = [];
+                bgRevealPtr = 0;
+
+                // ① 先按初始字号造出元素并挂到页面上——只有真正渲染过，
+                //    才能量到「这段话实际有多宽」（短语可能宽达字号十倍）。
+                //    间奏的音符图标整体小一档：它们是背景装饰，不该压过歌词。
+                const baseSize = line.isGap
+                    ? Math.min(W / (charList.length * 2.6), H * 0.15)
+                    : Math.min(W / (charList.length * 1.6), H * 0.22);
+                const spans = [];
+                for (let i = 0; i < charList.length; i++) {
+                    const span = document.createElement('span');
+                    span.className = charList[i].isNote ? 'bg-char bg-note' : 'bg-char';
+                    span.textContent = charList[i].char;
+                    span.style.fontSize = `${(baseSize * (0.72 + Math.random() * 0.42)).toFixed(1)}px`;
+                    batch.appendChild(span);
+                    spans.push(span);
+                }
+
+                // ② 量真实宽高（一次布局）。
+                //    必须用 offsetWidth/offsetHeight —— 它们是布局尺寸，不受
+                //    transform 影响；而"未出现"状态下字还带着 scale:0.82，
+                //    用 getBoundingClientRect 会量到缩小 18% 的框，
+                //    浮现到 scale:1 后就会比计划的大一圈。
+                const boxes = [];
+                for (let i = 0; i < spans.length; i++) {
+                    boxes.push({
+                        w: Math.max(4, spans[i].offsetWidth),
+                        h: Math.max(4, spans[i].offsetHeight)
+                    });
+                }
+
+                // ③ 面积预算：总墨量不超过视口的一定比例，否则根本摆不开。
+                //    超了就整体等比缩小（字号与宽高同步缩放）。
+                let totalArea = 0;
+                for (let i = 0; i < boxes.length; i++) totalArea += boxes[i].w * boxes[i].h;
+                const budget = W * H * 0.42;
+                const kGlobal = totalArea > budget ? Math.sqrt(budget / totalArea) : 1;
+                for (let i = 0; i < spans.length; i++) {
+                    let k = kGlobal;
+                    const maxW = W * 0.62;                       // 单段不超过视口宽度的 62%
+                    if (boxes[i].w * k > maxW) k = maxW / boxes[i].w;
+                    if (k < 0.999) {
+                        const cur = parseFloat(spans[i].style.fontSize) || baseSize;
+                        spans[i].style.fontSize = `${(cur * k).toFixed(1)}px`;
+                        boxes[i].w *= k;
+                        boxes[i].h *= k;
+                    }
+                }
+
+                // ④ 不重叠摆放（含漂移与旋转的余量）
+                const pos = placeBgChars(boxes, W, H);
+
+                // ⑤ 落位 + 漂移参数
+                for (let i = 0; i < spans.length; i++) {
+                    const span = spans[i];
+                    const p = pos[i];
+                    if (!p) { span.remove(); continue; }         // 实在摆不下就少放一段
+                    span.style.left = `${p.x.toFixed(1)}px`;
+                    span.style.top = `${p.y.toFixed(1)}px`;
+
+                    // 漂移参数缓存在 JS 里，避免每帧读 dataset。
+                    // 振幅上限与 BG_OX/BG_AX（BG_OY/BG_AY）严格对应——
+                    // 摆放时的留白就是按这些上限算的，改这里必须同步改常量。
+                    bgFloat.push({
+                        ox: (Math.random() - 0.5) * 2 * BG_OX,
+                        oy: (Math.random() - 0.5) * 2 * BG_OY,
+                        ax: BG_AX * 0.35 + Math.random() * BG_AX * 0.65,
+                        sx: 0.0004 + Math.random() * 0.0006,
+                        px: Math.random() * Math.PI * 2,
+                        ay: BG_AY * 0.35 + Math.random() * BG_AY * 0.65,
+                        sy: 0.0003 + Math.random() * 0.0005,
+                        py: Math.random() * Math.PI * 2,
+                        ar: 1.5 + Math.random() * (BG_ROT_DEG - 1.5),
+                        sr: 0.0002 + Math.random() * 0.0003,
+                        pr: Math.random() * Math.PI * 2
+                    });
+
+                    // 出现时刻：进度走到该段的演唱时刻才浮现（唯一判据）
+                    const rt = charList[i].revealTime;
+                    span._rt = (rt !== null && rt !== undefined && isFinite(rt)) ? rt : null;
+
+                    bgChars.push(span);
+                }
+
+                // 强制一次样式结算：让浏览器先以「未出现」的状态提交这批新节点，
+                // 否则插入与加 .revealed 落在同一帧里不会触发过渡，字会"啪"地出现。
+                void batch.offsetWidth;
+
+                // 立刻结算已经到点的字（拖进度、切歌回到句中时需要），
+                // 剩下的交给 rAF 在各自的演唱时刻依次浮现
+                revealBgChars(currentProgress);
+                startBgAnimation();
+            }
+
+            // 逐字出现：唯一判据是「进度到达该字的演唱时刻」——
+            // 也就是前景唱到哪个字，背景才浮现哪个字。
+            // 字符按时间递增，所以用单指针 O(1) 推进即可。
+            function revealBgChars(progress) {
+                while (bgRevealPtr < bgChars.length) {
+                    const el = bgChars[bgRevealPtr];
+                    if (!el) { bgRevealPtr++; continue; }
+                    const rt = el._rt;
+                    if (rt !== null && rt !== undefined && progress < rt) break;
+                    if (!el.classList.contains('revealed')) el.classList.add('revealed');
+                    bgRevealPtr++;
+                }
+            }
+
+            // 拖动进度条回跳时，重新对齐逐字出现状态
+            function resyncBgReveals(progress) {
+                bgRevealPtr = 0;
+                for (let i = 0; i < bgChars.length; i++) {
+                    const el = bgChars[i];
+                    if (!el) continue;
+                    const rt = el._rt;
+                    const revealed = (rt === null || rt === undefined) || progress >= rt;
+                    if (revealed) {
+                        if (!el.classList.contains('revealed')) el.classList.add('revealed');
+                        if (rt !== null && rt !== undefined) bgRevealPtr = i + 1;
+                    } else if (el.classList.contains('revealed')) {
+                        el.classList.remove('revealed');
+                    }
+                }
+            }
+
+            function startBgAnimation() {
+                if (bgAnimationId) cancelAnimationFrame(bgAnimationId);
+                if (bgChars.length === 0) return;
+                bgStartTime = performance.now();
+
+                function frame(now) {
+                    const t = now - bgStartTime;
+                    // 暂停/停止时进度循环不在跑，这里兜底推进出现节拍
+                    revealBgChars(currentProgress);
+                    const len = bgChars.length;
+                    for (let i = 0; i < len; i++) {
+                        const el = bgChars[i];
+                        const f = bgFloat[i];
+                        if (!el || !f) continue;
+                        const dx = f.ox + Math.sin(t * f.sx + f.px) * f.ax;
+                        const dy = f.oy + Math.cos(t * f.sy + f.py) * f.ay;
+                        const rot = Math.sin(t * f.sr + f.pr) * f.ar;
+                        el.style.transform = `translate3d(${dx.toFixed(2)}px, ${dy.toFixed(2)}px, 0) rotate(${rot.toFixed(2)}deg)`;
+                    }
+                    bgAnimationId = requestAnimationFrame(frame);
+                }
+                bgAnimationId = requestAnimationFrame(frame);
+            }
+
+            // ==================== 歌词应用 ====================
+            function applyLyric(lrcText) {
+                // 解析后插入"间奏等待点"行：空档 > 5s 的地方各插一行 · · ·
+                lyricLines = insertGapLines(parseLyric(lrcText));
+
+                // 换歌：先结算/停掉在跑的滚动动画，避免旧的位移残留到新列表
+                if (scrollAnim) { scrollAnim.cancel(); scrollAnim = null; }
+                if (lyricListEl) lyricListEl.style.transform = '';
+                gapFollowStop();          // 换歌重排：正在跟随的滚动循环必须停掉
+
+                lyricListEl.innerHTML = '';
+                lyricLineElements = [];
+                lyricCharElements = [];
+                charState = [];
+                charLit = [];
+                lineClassCache = [];
+                gapLineIndices = [];
+                currentActiveLineIndex = -1;
+                bgCurrentLineIndex = -1;
+                clearBgChars();
+
+                if (lyricLines.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.className = 'empty-lyric';
+                    empty.textContent = '暂无歌词';
+                    lyricListEl.appendChild(empty);
+                    lyricLineElements.push(empty);
+                    lyricCharElements.push(null);
+                    updateListPadding();
+                    return;
+                }
+
+                const fragment = document.createDocumentFragment();
+                lyricLines.forEach((line, li) => {
+                    const lineEl = document.createElement('div');
+                    lineEl.className = line.isGap ? 'lyric-line gap-line' : 'lyric-line';
+                    lineEl.dataset.time = line.time;
+                    if (line.isGap) gapLineIndices.push(li);
+
+                    let charEls = null;
+                    if (line.isGap) {
+                        // 间奏等待点：三个点放在裁切层里（折叠时整层被裁成 0 高）
+                        charEls = [];
+                        const inner = document.createElement('div');
+                        inner.className = 'gap-inner';
+                        for (let k = 0; k < 3; k++) {
+                            const dot = document.createElement('span');
+                            dot.className = 'gap-dot';
+                            inner.appendChild(dot);
+                            charEls.push(dot);
+                        }
+                        lineEl.appendChild(inner);
+                    } else if (line.chars && line.chars.length > 0) {
+                        charEls = [];
+                        line.chars.forEach(c => {
+                            const span = document.createElement('span');
+                            span.className = 'lyric-char unsung';
+                            span.textContent = c.char;
+                            span.dataset.time = c.time;
+                            span.dataset.endTime = c.endTime;
+                            lineEl.appendChild(span);
+                            charEls.push(span);
+                        });
+                    } else {
+                        lineEl.textContent = line.text || '♪';
+                    }
+
+                    fragment.appendChild(lineEl);
+                    lyricLineElements.push(lineEl);
+                    lyricCharElements.push(charEls);
+                });
+                lyricListEl.appendChild(fragment);
+
+                updateListPadding();
+                updateGapWidth();   // 等宽量到后，等待点才知道自己该站哪
+
+                if (playerStatus === 'playing' || playerStatus === 'paused') {
+                    const idx = findActiveLineIndex(currentProgress);
+                    updateHighlight(idx, true);
+                    applyProgress(currentProgress);
+                    scrollToIndex(idx, true);   // 换歌后直接定位，不做长距离滚动
+                } else if (lyricLineElements.length > 0) {
+                    updateHighlight(0, false);
+                    scrollToIndex(0, true);
+                }
+            }
+
+            async function fetchLyric(force = false) {
+                const songKey = `${currentSongName}__${currentSinger}`;
+                if (!force && songKey === lastFetchSongKey && lyricLines.length > 0) return;
+                lastFetchSongKey = songKey;
+
+                try {
+                    const res = await fetch(LYRIC_ALL_URL);
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const data = await res.json();
+
+                    let lrcText = data.lxlyric;
+                    if (!lrcText || !lrcText.trim()) {
+                        lrcText = data.lyric || '';
+                    }
+
+                    applyLyric(lrcText);
+                    trackNameEl.textContent = currentSongName || '—';
+                    trackSingerEl.textContent = currentSinger || '—';
+                } catch (err) {
+                    console.error('获取歌词失败:', err);
+                    lyricListEl.innerHTML = '<div class="empty-lyric">歌词加载失败，请检查服务</div>';
+                    lyricLineElements = [];
+                    lyricCharElements = [];
+                    lyricLines = [];
+                }
+            }
+
+            // 拉取 /status 获取 picUrl
+            async function fetchStatus() {
+                try {
+                    const res = await fetch(STATUS_URL);
+                    if (!res.ok) return;
+                    const data = await res.json();
+                    console.log('[状态] picUrl:', data.picUrl ? data.picUrl.slice(0, 80) : '（无）');
+                    // 歌曲总时长（进度条的分母）
+                    if (typeof data.duration === 'number' && isFinite(data.duration) && data.duration > 0) {
+                        trackDuration = data.duration;
+                        updateProgressUI(currentProgress);
+                    }
+                    if (data.picUrl) {
+                        updateAlbumArt(data.picUrl);
+                    } else {
+                        // 状态里没有封面，尝试从已有封面获取
+                        if (!currentPicUrl) {
+                            applyBgColor({ r: 60, g: 90, b: 160 });
+                        }
+                    }
+                    // 如果状态里有歌名/歌手，也更新一下
+                    if (data.name && data.name !== currentSongName) {
+                        currentSongName = data.name;
+                        trackNameEl.textContent = data.name;
+                    }
+                    if (data.singer && data.singer !== currentSinger) {
+                        currentSinger = data.singer;
+                        trackSingerEl.textContent = data.singer;
+                    }
+                    // 同步播放状态（SSE 未连接时的兜底）
+                    if (data.status && data.status !== playerStatus &&
+                        performance.now() >= ctrlPendingUntil) {
+                        playerStatus = data.status;
+                        renderStatusBadge();
+                        setPlayingUI(playerStatus === 'playing');
+                    }
+                    // 控件相关字段：收藏 / 音量 / 静音
+                    if (data.collect !== undefined) syncCtrlState('collect', data.collect);
+                    if (data.volume !== undefined) syncCtrlState('volume', data.volume);
+                    if (data.mute !== undefined) syncCtrlState('mute', data.mute);
+                    if (data.status === 'playing') {
+                        setClockRate(data.playbackRate);
+                        resumeClock();
+                        startBgPulse();
+                        startProgressLoop();
+                    } else if (data.status === 'paused') {
+                        freezeClock();
+                        startProgressLoop();
+                    }
+                    // 同步进度：只作为时钟的误差校正源，扫光的连续性由本地时钟保证
+                    if (typeof data.progress === 'number' && isFinite(data.progress)) {
+                        syncClock(data.progress);
+                        if (!progressRunning) {
+                            currentProgress = clockProgress(nowSec());
+                            applyProgress(currentProgress);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('拉取状态失败', e);
+                }
+            }
+
+            function scheduleFetchLyric() {
+                if (fetchTimer) clearTimeout(fetchTimer);
+                fetchTimer = setTimeout(() => fetchLyric(true), 300);
+            }
+
+            // 防抖拉取状态，避免多条事件同时触发刷封面
+            function scheduleFetchStatus(delay = 150) {
+                if (statusFetchTimer) clearTimeout(statusFetchTimer);
+                statusFetchTimer = setTimeout(() => {
+                    statusFetchTimer = null;
+                    fetchStatus().catch(() => {});
+                }, delay);
+            }
+
+            function initSSE() {
+                if (typeof EventSource === 'undefined') {
+                    setConnState('err', '浏览器不支持 SSE');
+                    return;
+                }
+                const es = new EventSource(SSE_URL);
+
+                es.onopen = () => { setConnState('ok', '已连接'); };
+                es.onerror = (err) => {
+                    console.error('SSE 错误:', err);
+                    setConnState('err', '连接中断，重试中…');
+                };
+
+                es.addEventListener('status', (e) => {
+                    const st = String(parseEventData(e.data) || 'stoped');
+                    // 刚点过播放/暂停：先以本地为准，等权威状态追上来（否则会被旧事件打回去）
+                    if (performance.now() < ctrlPendingUntil) return;
+                    if (st === playerStatus) return;      // 状态未变化，不重复处理
+                    playerStatus = st;
+                    renderStatusBadge();
+                    setPlayingUI(st === 'playing');
+                    if (st === 'playing') {
+                        resumeClock();
+                        startBgPulse();
+                        startProgressLoop();
+                        scheduleFetchStatus();
+                    } else if (st === 'paused') {
+                        // 暂停：冻结时钟（位置停在原地），但循环继续跑以便拖动时立刻响应
+                        freezeClock();
+                        startProgressLoop();
+                        scheduleFetchStatus();
+                    } else {
+                        freezeClock();
+                        stopBgPulse();
+                        stopProgressLoop();
+                        applyProgress(clockProgress(nowSec()));
+                    }
+                });
+
+                es.addEventListener('name', (e) => {
+                    const name = parseEventData(e.data);
+                    if (name && currentSongName !== name) {
+                        currentSongName = name;
+                        trackNameEl.textContent = name || '—';
+                        resetClock();          // 新歌：进度归零，等权威进度再起跑
+                        scheduleFetchLyric();
+                        scheduleFetchStatus();
+                    }
+                });
+
+                es.addEventListener('singer', (e) => {
+                    const singer = parseEventData(e.data);
+                    if (singer && currentSinger !== singer) {
+                        currentSinger = singer;
+                        trackSingerEl.textContent = singer || '—';
+                    }
+                });
+
+                // 监听 picUrl 事件（注意 filter 必须包含 picUrl 才会推送）
+                es.addEventListener('picUrl', (e) => {
+                    const url = parseEventData(e.data);
+                    if (url && url !== 'null' && url !== 'undefined' &&
+                        (url.startsWith('http') || url.startsWith('data:'))) {
+                        updateAlbumArt(url);
+                    }
+                });
+
+                es.addEventListener('progress', (e) => {
+                    // data 可能是 JSON 编码的数值，统一解码
+                    const p = parseFloat(parseEventData(e.data));
+                    if (isNaN(p)) return;
+
+                    const advancing = p > targetProgress + 0.05;
+                    // 只做「误差吸收」，扫光的每帧推进由本地时钟提供 → 连续无脉冲
+                    syncClock(p);
+
+                    if (progressRunning) return;
+
+                    // 兜底：万一漏了 status 事件，只要进度在推进就按播放处理
+                    if (advancing && playerStatus !== 'paused') {
+                        playerStatus = 'playing';
+                        renderStatusBadge();
+                        setPlayingUI(true);
+                        resumeClock();
+                        startBgPulse();
+                        startProgressLoop();
+                        scheduleFetchStatus();
+                        return;
+                    }
+                    currentProgress = clockProgress(nowSec());
+                    applyProgress(currentProgress);
+                });
+
+                es.addEventListener('playbackRate', (e) => {
+                    setClockRate(parseFloat(parseEventData(e.data)));
+                });
+
+                // 播放控件的三个字段（filter 里必须带上才会推送）
+                es.addEventListener('collect', (e) => syncCtrlState('collect', e.data));
+                es.addEventListener('volume', (e) => syncCtrlState('volume', e.data));
+                es.addEventListener('mute', (e) => syncCtrlState('mute', e.data));
+
+                // 总时长（进度条分母）；切换 /status 拉取时已兜底
+                es.addEventListener('duration', (e) => {
+                    const d = parseFloat(parseEventData(e.data));
+                    if (isFinite(d) && d > 0 && Math.abs(d - trackDuration) > 0.5) {
+                        trackDuration = d;
+                        updateProgressUI(currentProgress);
+                    }
+                });
+
+                es.addEventListener('lxlyric', (e) => {
+                    if (e.data && e.data !== 'null' && lyricLines.length === 0) {
+                        scheduleFetchLyric();
+                    }
+                });
+            }
+
+            // ==================== 底部连接状态条 ====================
+            // 一行横向排布：● 连接状态 / 播放器状态 / IP / 端口 / 协议
+            function renderStatusBadge() {
+                if (sbDotEl) sbDotEl.className = 'sb-dot ' + connState;
+                if (sbStateEl) sbStateEl.textContent = connText;
+                if (cbPlayerEl) {
+                    cbPlayerEl.textContent =
+                        playerStatus === 'playing' ? '播放中'
+                        : playerStatus === 'paused' ? '已暂停'
+                        : playerStatus === 'error' ? '播放出错'
+                        : '未播放';
+                }
+            }
+
+            function setConnState(state, text) {
+                connState = state;
+                connText = text;
+                renderStatusBadge();
+            }
+
+            function fillEndpointInfo() {
+                try {
+                    const u = new URL(API_BASE);
+                    if (sbIpEl) sbIpEl.textContent = u.hostname || '127.0.0.1';
+                    if (sbPortEl) sbPortEl.textContent = u.port || (u.protocol === 'https:' ? '443' : '80');
+                } catch (e) {
+                    if (sbIpEl) sbIpEl.textContent = '127.0.0.1';
+                    if (sbPortEl) sbPortEl.textContent = '23330';
+                }
+            }
+
+            // ==================== 右下角播放控件 ====================
+            // 这些控制接口都是 GET，且返回体用不上；失败一律静默
+            // （本地服务没开时不该影响歌词本身）。
+            // 先按 cors 发；若被 CORS 拦下，再用 no-cors 发一次——
+            // 后者读不到响应，但请求本身能到服务端，控制动作照样生效。
+            function ctrlFetch(url) {
+                return fetch(url).catch(() => fetch(url, { mode: 'no-cors' })).catch(() => {});
+            }
+
+            function setPlayingUI(playing) {
+                if (playerBarEl) playerBarEl.classList.toggle('playing', !!playing);
+            }
+
+            function togglePlay() {
+                const wantPlaying = (playerStatus !== 'playing');
+                // 乐观更新：立刻反映到图标与状态条，随后由 SSE / status 校正
+                playerStatus = wantPlaying ? 'playing' : 'paused';
+                setPlayingUI(wantPlaying);
+                renderStatusBadge();
+                ctrlPendingUntil = performance.now() + 1200;
+                if (wantPlaying) {
+                    resumeClock();
+                    startBgPulse();
+                    startProgressLoop();
+                    ctrlFetch(CTRL_PLAY);
+                } else {
+                    // 暂停：冻结时钟（位置停在原地），但循环继续跑
+                    freezeClock();
+                    startProgressLoop();
+                    ctrlFetch(CTRL_PAUSE);
+                }
+            }
+
+            function skipNext() { ctrlFetch(CTRL_NEXT); }
+            function skipPrev() { ctrlFetch(CTRL_PREV); }
+
+            // ==================== 可拖动条：一个控制器，两处复用 ====================
+            // 进度条与音量条共用同一套手势代码，避免"两处各修一遍、各留一个 bug"。
+            //
+            // 要点：pointermove / pointerup 挂在 window 上，而不是只挂在被拖的元素上。
+            //   · 指针捕获（setPointerCapture）在个别环境会抛错或静默失效；
+            //   · 即便捕获成功，横向拖长条时指针纵向漂出元素也很常见。
+            // 一旦 pointerup 落在元素外收不到，状态位就会永远停在「拖动中」，
+            // 进度条此后被 updateProgressUI 里的 `if (seeking) return` 冻住，只剩点击能用
+            // （这正是"拖不动、只能点"的成因）。挂到 window 后抬手必然收得到；
+            // 另外补 mousemove / mouseup 兜底（极少数环境只投递鼠标事件不投递指针事件），
+            // 两种事件重复到达对结果无副作用（同一坐标写同一个值）。
+            function bindSlider(opts) {
+                const el = opts.el;
+                if (!el) return null;
+                const st = { dragging: false, pointerId: null };
+
+                const ratioOf = (clientX) => {
+                    const r = el.getBoundingClientRect();
+                    if (!(r.width > 0)) return null;
+                    return Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+                };
+
+                const onMove = (e) => {
+                    if (!st.dragging) return;
+                    // 只认按下时的那根指针，多指/右键乱入时不会串台
+                    if (st.pointerId !== null && e.pointerId !== undefined && e.pointerId !== st.pointerId) return;
+                    if (e.cancelable) e.preventDefault();
+                    const r = ratioOf(e.clientX);
+                    if (r !== null) opts.onMove(r);
+                };
+
+                const end = (e, commit) => {
+                    if (!st.dragging) return;
+                    st.dragging = false;
+                    st.pointerId = null;
+                    window.removeEventListener('pointermove', onMove, true);
+                    window.removeEventListener('pointerup', onUp, true);
+                    window.removeEventListener('pointercancel', onCancel, true);
+                    window.removeEventListener('mousemove', onMove, true);
+                    window.removeEventListener('mouseup', onUp, true);
+                    window.removeEventListener('blur', onBlur);
+                    el.classList.remove('dragging');
+                    if (e && e.pointerId !== undefined) {
+                        try { el.releasePointerCapture(e.pointerId); } catch (err) {}
+                    }
+                    opts.onEnd(commit);
+                };
+                const onUp = (e) => end(e, true);
+                const onCancel = (e) => end(e, false);
+                // 窗口失焦（切走 / 锁屏）也要收尾，否则同样会卡在"拖动中"
+                const onBlur = () => end(null, true);
+
+                const start = (e) => {
+                    if (st.dragging) return;
+                    if (e.button !== undefined && e.button > 0) return;
+                    if (!opts.usable()) return;
+                    st.dragging = true;
+                    st.pointerId = (e.pointerId === undefined) ? null : e.pointerId;
+                    if (e.cancelable) e.preventDefault();
+                    // 捕获只是锦上添花（让 hover / 光标留在原元素上），失败也不影响拖动
+                    try { el.setPointerCapture(e.pointerId); } catch (err) {}
+                    el.classList.add('dragging');
+                    window.addEventListener('pointermove', onMove, true);
+                    window.addEventListener('pointerup', onUp, true);
+                    window.addEventListener('pointercancel', onCancel, true);
+                    window.addEventListener('mousemove', onMove, true);
+                    window.addEventListener('mouseup', onUp, true);
+                    window.addEventListener('blur', onBlur);
+                    opts.onStart();
+                    const r = ratioOf(e.clientX);
+                    if (r !== null) opts.onMove(r);
+                };
+
+                el.addEventListener('pointerdown', start);
+                // 键盘操作：可访问性 + 拖不动时的保底（←↓ 退 / →↑ 进 / Shift ×10 / Home·End 到两端）
+                el.addEventListener('keydown', (e) => {
+                    if (!opts.usable()) return;
+                    const step = e.shiftKey ? 10 : 1;
+                    let d = null;
+                    if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') d = -step;
+                    else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') d = step;
+                    else if (e.key === 'Home') d = -Infinity;
+                    else if (e.key === 'End') d = Infinity;
+                    else return;
+                    e.preventDefault();
+                    opts.onKey(d);
+                });
+                // 拖动时不要触发浏览器自己的元素拖拽
+                el.addEventListener('dragstart', (e) => e.preventDefault());
+                return st;
+            }
+
+            // ==================== 进度条：拖 / 点定位 ====================
+            // 拖动过程只动本地 UI（填充、滑块、时间文本），松手才发一次 /seek，
+            // 否则每一像素都是一次请求。offset 传绝对秒数。
+            function renderSeekPreview(sec) {
+                seekPreviewSec = sec;
+                if (trackDuration > 0) {
+                    seekWrapEl.style.setProperty('--p', (sec / trackDuration).toFixed(5));
+                }
+                if (progressCurEl) progressCurEl.textContent = fmtTime(Math.max(0, sec));
+            }
+
+            function commitSeek(sec) {
+                if (!seekUsable) return;
+                // 末尾留 50ms：服务端校验 offset <= duration，越界会直接 400
+                const target = Math.max(0, Math.min(trackDuration - 0.05, sec));
+                // 本地时钟立刻对齐 —— 歌词高亮、滚动、逐字扫光、天际屏同时到位，
+                // 不用等 SSE 那 250ms，拖完那一瞬间就是准的
+                clockPos = target;
+                lastClockT = nowSec();
+                clockTrim = 0;
+                clockInit = true;
+                targetProgress = target;
+                currentProgress = target;
+                resyncBgReveals(target);
+                seekPendingUntil = performance.now() + 1500;
+                ctrlFetch(ctrlSeek(target));
+                // 暂停 / 停止时没有每帧循环在跑，得手动重画一次（含换行与滚动）
+                if (progressRunning) updateProgressUI(target);
+                else applyProgress(target);
+            }
+
+            function bindSeekBar() {
+                if (!seekTrackEl || !seekWrapEl) return;
+                bindSlider({
+                    el: seekTrackEl,
+                    usable: () => seekUsable,          // 时长未知（还没歌）时不可拖
+                    onStart: () => {
+                        seeking = true;
+                        seekWrapEl.classList.add('seeking');
+                    },
+                    onMove: (r) => renderSeekPreview(r * trackDuration),
+                    // 键盘没有"松手"这个动作，改一次就提交一次
+                    onKey: (d) => {
+                        const base = seeking ? seekPreviewSec : currentProgress;
+                        const sec = d === Infinity ? trackDuration - 0.05
+                                  : d === -Infinity ? 0
+                                  : base + d;
+                        seeking = true;
+                        renderSeekPreview(Math.max(0, Math.min(trackDuration, sec)));
+                        seeking = false;
+                        commitSeek(seekPreviewSec);
+                    },
+                    onEnd: (commit) => {
+                        seeking = false;
+                        seekWrapEl.classList.remove('seeking');
+                        if (commit) commitSeek(seekPreviewSec);
+                    }
+                });
+            }
+
+            function renderVolumeUI() {
+                if (volRangeEl) {
+                    // volumeValue 是唯一来源：填充与滑块都由 --v 驱动，不可能不同步
+                    const f = Math.max(0, Math.min(1, (volumeValue - 1) / 99));
+                    volRangeEl.style.setProperty('--v', f.toFixed(5));
+                    volRangeEl.classList.toggle('dim', muted);
+                    volRangeEl.setAttribute('aria-valuenow', String(volumeValue));
+                    volRangeEl.setAttribute('aria-valuetext',
+                        muted ? `${volumeValue}%（已静音）` : `${volumeValue}%`);
+                }
+                if (btnMuteEl) btnMuteEl.classList.toggle('muted', muted);
+            }
+
+            // 拖动 / 点击音量条：ratio(0~1) → 音量(1~100)。
+            // onMove 阶段只更新本地 UI + 防抖发送；键盘或松手时 immediate=true 立刻发。
+            function setVolumeFromRatio(r, immediate) {
+                const v = Math.max(1, Math.min(100, 1 + Math.round(r * 99)));
+                if (v !== volumeValue) {
+                    volumeValue = v;
+                    if (muted) muted = false;       // 动手调音量即视为解除静音
+                }
+                renderVolumeUI();
+                if (immediate) {
+                    if (volumeSendTimer) { clearTimeout(volumeSendTimer); volumeSendTimer = null; }
+                    sendVolume();
+                } else {
+                    // 防抖 180ms：连续拖动只在停顿处发一次
+                    if (volumeSendTimer) clearTimeout(volumeSendTimer);
+                    volumeSendTimer = setTimeout(() => {
+                        volumeSendTimer = null;
+                        sendVolume();
+                    }, 180);
+                }
+            }
+
+            function bindVolumeBar() {
+                if (!volRangeEl) return;
+                bindSlider({
+                    el: volRangeEl,
+                    usable: () => true,
+                    onStart: () => { volDragging = true; },
+                    onMove: (r) => setVolumeFromRatio(r, false),
+                    onKey: (d) => {
+                        const v = d === Infinity ? 100 : d === -Infinity ? 1 : volumeValue + d;
+                        setVolumeFromRatio((Math.max(1, Math.min(100, v)) - 1) / 99, true);
+                    },
+                    onEnd: () => {
+                        volDragging = false;
+                        if (volumeSendTimer) { clearTimeout(volumeSendTimer); volumeSendTimer = null; }
+                        sendVolume();
+                    }
+                });
+            }
+
+            // 去重后发送：input 的防抖回调与 change 常常是同一次拖动的收尾，
+            // 不去重就会把同一个音量发两遍
+            function sendVolume() {
+                if (volumeValue === lastSentVolume) return;
+                lastSentVolume = volumeValue;
+                ctrlPendingUntil = performance.now() + 900;
+                ctrlFetch(ctrlVolume(volumeValue));
+            }
+
+            function toggleMute() {
+                muted = !muted;
+                renderVolumeUI();
+                ctrlPendingUntil = performance.now() + 1200;
+                ctrlFetch(ctrlMute(muted));
+            }
+
+            function renderCollectUI() {
+                if (btnCollectEl) btnCollectEl.classList.toggle('on', songCollected);
+            }
+
+            function toggleCollect() {
+                songCollected = !songCollected;
+                renderCollectUI();
+                ctrlPendingUntil = performance.now() + 1500;
+                ctrlFetch(songCollected ? CTRL_COLLECT : CTRL_UNCOLLECT);
+            }
+
+            // volume / mute / collect 会由 SSE 或 /status 推来。
+            // 刚点过控件的一小段时间内以本地为准，否则旧值会把 UI 拨回去再弹回来。
+            function syncCtrlState(field, raw) {
+                if (performance.now() < ctrlPendingUntil) return;
+                const v = parseEventData(raw);
+                if (field === 'volume') {
+                    // 拖动中本地是权威：播放器回推的是上一拍的值，别把滑块拽回去
+                    if (volDragging) return;
+                    const n = parseFloat(v);
+                    if (isFinite(n) && n >= 0 && n <= 100 && Math.round(n) !== volumeValue) {
+                        volumeValue = Math.round(n);
+                        renderVolumeUI();
+                    }
+                } else if (field === 'mute') {
+                    const m = (String(v) === 'true');
+                    if (m !== muted) { muted = m; renderVolumeUI(); }
+                } else if (field === 'collect') {
+                    const c = (String(v) === 'true');
+                    if (c !== songCollected) { songCollected = c; renderCollectUI(); }
+                }
+            }
+
+            function bindPlayerControls() {
+                if (btnPlayEl) btnPlayEl.addEventListener('click', togglePlay);
+                if (btnNextEl) btnNextEl.addEventListener('click', skipNext);
+                if (btnPrevEl) btnPrevEl.addEventListener('click', skipPrev);
+                if (btnMuteEl) btnMuteEl.addEventListener('click', toggleMute);
+                if (btnCollectEl) btnCollectEl.addEventListener('click', toggleCollect);
+                bindSeekBar();
+                bindVolumeBar();
+
+                setPlayingUI(playerStatus === 'playing');
+                renderVolumeUI();
+                renderCollectUI();
+                renderStatusBadge();
+            }
+
+            // ==================== 液态玻璃：高光跟随指针 ====================
+            // 只写 --mx / --my 两个自定义属性，几何换算交给 CSS 的 radial-gradient(at …)；
+            // 用 rAF 节流，一帧最多一次写入（读 rect 不触发布局，因为只改了自定义属性）。
+            // 离开时清掉内联值，回到 CSS 里的初始位置（50%），已注册属性还能走过渡。
+            function bindGlassSheen() {
+                const dock = document.getElementById('playerDock');
+                if (!dock) return;
+                let raf = 0, cx = 0, cy = 0;
+                const apply = () => {
+                    raf = 0;
+                    const r = dock.getBoundingClientRect();
+                    if (!r.width) return;
+                    // 限制在玻璃范围内，避免指针快出边界时高光跑飞
+                    const x = Math.min(Math.max(cx - r.left, 0), r.width);
+                    const y = Math.min(Math.max(cy - r.top, 0), r.height);
+                    dock.style.setProperty('--mx', x.toFixed(1) + 'px');
+                    dock.style.setProperty('--my', y.toFixed(1) + 'px');
+                };
+                dock.addEventListener('pointermove', (e) => {
+                    cx = e.clientX; cy = e.clientY;
+                    if (!raf) raf = requestAnimationFrame(apply);
+                }, { passive: true });
+                const reset = () => {
+                    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+                    dock.style.removeProperty('--mx');
+                    dock.style.removeProperty('--my');
+                };
+                dock.addEventListener('pointerleave', reset);
+                dock.addEventListener('pointercancel', reset);
+            }
+
+            // ==================== 控件变淡：指针不在控件上就淡下去 ====================
+            // 判定只有一条依据：指针是否落在播放控件 / 连接状态条的矩形内。
+            //   在内 → 恢复正常亮度；不在 → 降到 0.42（CSS 的 .dock-wrap.idle）。
+            // 用「缓存矩形 + 比较坐标」而不是 elementFromPoint / :hover：
+            //   · .conn-bar 是 pointer-events:none，:hover 在它身上永远不成立；
+            //   · 比较坐标零布局开销（矩形只在 resize 与入场动画结束时重取）。
+            // 拖动中（seeking / volDragging）永不淡出 —— 指针拖到轨道外不该闪一下。
+            function bindDockDim() {
+                if (!dockWrapEl) return;
+                let dimmed = null;         // 与 class 同步的本地镜像，避免每次判定都查 DOM
+                let px = NaN, py = NaN;    // 最近的指针坐标（pointermove 里更新，很便宜）
+                let raf = 0;
+                let ready = false;         // 入场动画跑完前不判定（理由见文末）
+                let rects = [];
+                const refreshRects = () => {
+                    rects = [playerDockEl, connBarEl].filter(Boolean)
+                        .map((el) => el.getBoundingClientRect());
+                };
+                const overDock = () => {
+                    if (!isFinite(px)) return false;
+                    for (let i = 0; i < rects.length; i++) {
+                        const r = rects[i];
+                        if (px >= r.left && px <= r.right && py >= r.top && py <= r.bottom) return true;
+                    }
+                    return false;
+                };
+                const apply = (d) => {
+                    if (d === dimmed) return;
+                    dimmed = d;
+                    dockWrapEl.classList.toggle('idle', d);
+                };
+                // 快路径：只看坐标（每帧判定也不碰样式）
+                const judgeByRect = () => apply(!overDock() && !seeking && !volDragging);
+                // 慢路径：补上 :hover（页面刚加载、指针一直没动过时，
+                // 坐标还是 NaN，只能靠浏览器实时的 :hover 状态才知道指针在控件上）
+                const judgeFull = () => {
+                    const hover = !!(playerDockEl && playerDockEl.matches(':hover'));
+                    apply(!(hover || overDock()) && !seeking && !volDragging);
+                };
+
+                refreshRects();
+                window.addEventListener('resize', refreshRects, { passive: true });
+                window.addEventListener('pointermove', (e) => {
+                    px = e.clientX; py = e.clientY;
+                    if (!raf) raf = requestAnimationFrame(() => { raf = 0; judgeByRect(); });
+                }, { passive: true });
+                // 指针移出窗口 / 切走窗口 → 当作不在控件上
+                window.addEventListener('blur', () => apply(true));
+                document.addEventListener('mouseleave', () => apply(true));
+                // 兜底：每 200ms 纠一次（拖动刚结束、指针没再动过、矩形刚变过，都靠它收敛）
+                setInterval(() => { if (ready) judgeFull(); }, 200);
+                // 入场动画（dockIn 0.9s，fill:backwards）期间 opacity 由动画占着，
+                // 这时挂 .idle 不会走过渡、动画一结束会"啪"地跳到低亮度。
+                // 等它跑完再开始判定，顺便在动画结束后重取一次矩形（动画里带 16px 位移）。
+                setTimeout(() => {
+                    refreshRects();
+                    ready = true;
+                    judgeFull();
+                }, 1000);
+            }
+
+            // ==================== 背景图片：同目录的 backpicture.jpg ====================
+            // 在 lyrics.html 所在目录放一张 backpicture.jpg 即可当整屏背景：
+            //   读到了 → 淡入铺满（给图层挂 .ready），同时按 --pulse-k 减弱律动光晕；
+            //   读不到（没放图 / 名字拼错 / 图片损坏）→ 什么都不做，
+            //   画面维持默认的深色渐变，等价于没有这个功能。
+            // 先用一个游离的 Image 探一次（onerror 能拿到"文件不存在"），
+            // 再交给 CSS 图层去铺；探针与上屏是同一个 URL，浏览器只会真正读一次盘。
+            function initBackPicture() {
+                if (!bgPhotoEl) return;
+                const PHOTO_URL = 'backpicture.jpg';
+                const probe = new Image();
+                probe.onload = () => {
+                    bgPhotoEl.style.backgroundImage = 'url("' + PHOTO_URL + '")';
+                    // 铺图+解码要花一点时间，等下一帧再淡入，免得先闪一下空白
+                    requestAnimationFrame(() => {
+                        bgPhotoEl.classList.add('ready');
+                        lyricStageEl.classList.add('has-photo');
+                        const k = parseFloat(
+                            getComputedStyle(lyricStageEl).getPropertyValue('--pulse-k'));
+                        bgPulseK = (isFinite(k) && k > 0) ? k : 1;
+                    });
+                };
+                probe.onerror = () => {
+                    // 保持默认背景。这里不用 error 级：没放图是合法状态，不是故障
+                    console.info('[lyrics] 未找到 backpicture.jpg，沿用默认背景');
+                };
+                probe.src = PHOTO_URL;
+            }
+
+            function init() {
+                fillEndpointInfo();
+                bindPlayerControls();
+                bindGlassSheen();
+                bindDockDim();
+                initBackPicture();
+                fetchLyric(true).catch(() => {});
+                fetchStatus().catch(() => {});
+                initSSE();
+
+                setInterval(() => {
+                    if (lyricLines.length === 0 && playerStatus === 'playing') {
+                        fetchLyric(true).catch(() => {});
+                    }
+                }, 8000);
+
+                // 兜底：每 10 秒主动拉一次 status，确保封面更新
+                setInterval(() => { fetchStatus().catch(() => {}); }, 10000);
+
+                let resizeTimer = null;
+                window.addEventListener('resize', () => {
+                    if (resizeTimer) clearTimeout(resizeTimer);
+                    resizeTimer = setTimeout(() => {
+                        resizeTimer = null;
+                        updateListPadding();
+                        updateGapWidth();   // 字号/宽度随断点变化，等待点要重新落位
+                        if (currentActiveLineIndex >= 0) scrollToIndex(currentActiveLineIndex);
+                        // 天际屏按新尺寸重排
+                        if (bgCurrentLineIndex >= 0) {
+                            const idx = bgCurrentLineIndex;
+                            bgCurrentLineIndex = -1;
+                            buildBackgroundArt(idx);
+                        }
+                    }, 150);
+                });
+
+                if (window.ResizeObserver) {
+                    const ro = new ResizeObserver(() => {
+                        updateListPadding();
+                        if (currentActiveLineIndex >= 0) scrollToIndex(currentActiveLineIndex);
+                    });
+                    ro.observe(lyricScrollEl);
+                }
+
+                // 用户手动滚动时立刻结算动画/停止跟随，避免程序化位移与真实滚动叠加
+                const settleOnUserScroll = () => {
+                    gapFollowStop();
+                    if (scrollAnim) settleScroll();
+                };
+                lyricScrollEl.addEventListener('wheel', settleOnUserScroll, { passive: true });
+                lyricScrollEl.addEventListener('touchstart', settleOnUserScroll, { passive: true });
+                lyricScrollEl.addEventListener('pointerdown', settleOnUserScroll, { passive: true });
+
+                setTimeout(() => updateListPadding(), 100);
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', init);
+            } else {
+                init();
+            }
+        })();
+    </script>
+</body>
+</html>
