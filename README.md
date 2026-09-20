@@ -1,9 +1,17 @@
-# 沉浸歌词 · Wallpaper Engine 工程（以下皆为AI生成！！！作者是懒狗）
+# 桌面歌词 · Wallpaper Engine 工程，基于LX Music 开放API
+洛雪音乐Github地址：https://github.com/lyswhut/lx-music-desktop
 
-把桌面上的 `lyrics.html`（LX Music / Any Listen 逐字歌词壁纸页）打包成了一个
-**可调参数的壁纸引擎网页工程**。工程是自包含的，所有文件都在这个 `Lyrics` 文件夹里。
+！！本项目基于LX Music开放API打造，需要搭配LX Music使用，使用时需在LX Music里启用开放API服务
+本项目默认监听地址127.0.0.1，默认端口23330
 
----
+**导入WallpaperEngine教程：
+  打开WallpapaerEngine，点击壁纸编辑器，创建壁纸，然后选择文件中的index.html,会自动选中所有所需文件（请保证文件夹中只有本项目中的文件），然后左上角点击保存，就能在壁纸引擎中使用啦！
+
+**作者本人已上传此项目到壁纸引擎，暂时未通过审核
+
+## 以下皆为AI生成！作者是懒狗不想写README，请自行辨别正误！
+## 以下皆为AI生成！作者是懒狗不想写README，请自行辨别正误！
+## 以下皆为AI生成！作者是懒狗不想写README，请自行辨别正误！
 
 ## 一、文件说明
 
