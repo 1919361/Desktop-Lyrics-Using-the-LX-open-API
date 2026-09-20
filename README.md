@@ -1,4 +1,4 @@
-# 沉浸歌词 · Wallpaper Engine 工程
+# 沉浸歌词 · Wallpaper Engine 工程（以下皆为AI生成！！！作者是懒狗）
 
 把桌面上的 `lyrics.html`（LX Music / Any Listen 逐字歌词壁纸页）打包成了一个
 **可调参数的壁纸引擎网页工程**。工程是自包含的，所有文件都在这个 `Lyrics` 文件夹里。
