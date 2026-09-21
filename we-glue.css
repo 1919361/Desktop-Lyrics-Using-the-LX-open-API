@@ -42,23 +42,15 @@ html body .bg-photo::after {
  * 2. 背景律动 / 音频氛围
  * ======================================================================== */
 
-/* 「律动强度」没法直接做在 .bg-pulse-layer 上 —— 它的 opacity 被 JS 每帧
- * 写成行内样式，样式表压不住。所以把这一层包进一个只有 opacity 的壳
- * （.we-pulse-wrap，由 JS 创建），用壳的 opacity 当总音量旋钮：
- * 内外相乘，且随时可改。 */
-html body .we-pulse-wrap {
-    position: absolute;
-    inset: 0;
-    z-index: 0;                 /* 与 .bg-photo 同层，DOM 排在它之后 → 压在照片之上 */
-    pointer-events: none;
-    opacity: var(--we-pulse, 1);
+/* 「律动强度」直接给源页面读的 CSS 变量 —— 动态背景（.bg-shader，WebGL fBm 云雾）
+ * 的律动幅度由源页面 JS 读 --bg-beat-k。不再需要包一层壳改 opacity。 */
+html body .lyric-stage {
+    --bg-beat-k: var(--we-pulse, 1);
 }
-
-/* 原来「有背景图就把律动减半」的系数（.lyric-stage.has-photo { --pulse-k: .5 }）
- * 现在统一由 --we-pulse 算，这里把原系数钉成 1，避免两层打折。 */
-html body .lyric-stage,
+/* 有背景图时动态背景的可见度：默认 0（让位给照片），
+ * 调上去就是「照片 + 云雾叠加」。 */
 html body .lyric-stage.has-photo {
-    --pulse-k: 1 !important;
+    --bg-shader-op: var(--we-shader-photo, 0);
 }
 
 /* 音频律动：跟着低频鼓点呼吸的柔光。由 JS 每帧写 --we-audio（0~1）。 */
@@ -134,12 +126,19 @@ html body .lyric-line.upcoming-2 {
  * 才压得住它；钉成 1 = 整句都是「已唱」的亮色。 */
 html.we-no-sweep body .lyric-char { --lit: 1 !important; }
 
-/* 未唱到的字色（原值 rgba(255,255,255,0.28)） */
+/* 未唱到的字色（原值 rgba(255,255,255,0.28)）。
+   注意：这里的渐变必须与页面 .lyric-char 的公式**保持一致** —— 本文件的优先级
+   更高（html body 前缀 + 加载在后），页面里写的柔边会被这里盖掉。
+   2026-09-21：同步为「渐变柔边」版 —— 分界后是一条过渡带（1 → 0.58 → 未唱色），
+   带宽 = lit×(1−lit)×6 × 带宽系数，在 lit=0/1 时精确归零：未唱字统一暗色、
+   唱完字统一纯白，只有正在唱的字内部有柔和渐晕（旧版两个 stop 重合＝硬边，
+   之前就是它把页面的柔边覆盖没了）。暗色仍由「未唱字色」属性控制。 */
 html body .lyric-char {
     background-image: linear-gradient(90deg,
         rgba(255, 255, 255, 1) 0%,
         rgba(255, 255, 255, 1) calc(var(--lit) * 100%),
-        var(--we-char-dim, rgba(255, 255, 255, 0.28)) calc(var(--lit) * 100%),
+        rgba(255, 255, 255, 0.58) calc(var(--lit) * 100% + var(--lit) * (1 - var(--lit)) * 6 * 11%),
+        var(--we-char-dim, rgba(255, 255, 255, 0.28)) calc(var(--lit) * 100% + var(--lit) * (1 - var(--lit)) * 6 * 34%),
         var(--we-char-dim, rgba(255, 255, 255, 0.28)) 100%);
 }
 
@@ -165,6 +164,18 @@ html.we-no-glow body .lyric-line.active .lyric-char.sung {
 
 /* 间奏等待点开关 */
 html.we-no-gap body .lyric-line.gap-line { display: none !important; }
+
+/* 翻译歌词：字号（相对主歌词，em 值直接由 trans_scale 给出）、
+   文字颜色（颜色 × 不透明度由 we-glue.js 算好）。
+   兜底值 == 源 CSS 里的 0.3em / rgba(255,255,255,0.85)。
+   注意：译文随 active 行一起被 scale(2) 放大，
+   最终视觉 ≈ 0.3em × 2.2rem × 2 ≈ 1.32rem（主歌词 active 行的 1/3）。 */
+html body .lyric-trans {
+    font-size: var(--we-trans-scale, 0.3em);
+    color: var(--we-trans-c, rgba(255, 255, 255, 0.85));
+}
+/* 翻译开关：关掉时整句译文彻底不显示（连 active 行也不留，外层 wrap 一并隐藏） */
+html.we-no-trans body .lyric-trans-wrap { display: none !important; }
 
 
 /* ==========================================================================
@@ -214,15 +225,15 @@ html body .dock-wrap {
     html body .dock-wrap { --r-glass: min(var(--we-r-glass, 26px), 20px); }
 }
 
-/* 玻璃本体的磨砂参数 */
+/* 玻璃本体的色彩参数（**无 blur** —— 液态玻璃中心是"透"的，blur 已按需求
+ * 整个删掉；位移折射由页面的 SVG 滤镜负责。本条只是 url() 不可用时的回落，
+ * 「磨砂强度」属性（--we-glass-blur）因此不再起作用，保留只为兼容旧配置） */
 html body .player-dock {
     backdrop-filter:
-        blur(var(--we-glass-blur, 24px))
-        saturate(var(--we-glass-sat, 1.85))
+        saturate(var(--we-glass-sat, 1.9))
         brightness(var(--we-glass-bright, 1.06));
     -webkit-backdrop-filter:
-        blur(var(--we-glass-blur, 24px))
-        saturate(var(--we-glass-sat, 1.85))
+        saturate(var(--we-glass-sat, 1.9))
         brightness(var(--we-glass-bright, 1.06));
 }
 
@@ -239,11 +250,19 @@ html body .conn-bar {
         brightness(var(--we-glass-bright, 1.06));
 }
 
-/* 「指针不在控件上就淡下去」的程度（原值 玻璃 0.42 / 状态条 0.5） */
-html body .dock-wrap.idle .player-dock { opacity: var(--we-dim-op, 0.42); }
+/* 「指针不在控件上就淡下去」：
+ * ⚠ 玻璃本体（.player-dock）**永远不参与 opacity 变淡** —— 液态玻璃折射
+ *   （backdrop-filter: url(#svg)）+ 元素半透明 = 原始背景透出来 = 重影
+ *   （这条规则曾经就是壁纸引擎里"一个字两个影子"的元凶）。
+ *   变淡拆到：内容层淡出（下面第一条）+ 玻璃体内 .dock-dim 暗纱（页面 CSS 固定 0.45）。
+ * 「变淡程度」属性（--we-dim-op）现在控制的是**内容层**的淡出深度。 */
+html body .dock-wrap.idle .player-dock > :not(.dock-dim) { opacity: var(--we-dim-op, 0.42); }
 html body .dock-wrap.idle .conn-bar { opacity: var(--we-dim-op-chip, 0.5); }
-html.we-no-dim body .dock-wrap.idle .player-dock,
+/* 「变淡关闭」开关：内容层淡出、暗纱、状态条淡出全部回到不淡的状态
+ * （玻璃本体本来就不参与变淡，无需覆盖） */
+html.we-no-dim body .dock-wrap.idle .player-dock > :not(.dock-dim),
 html.we-no-dim body .dock-wrap.idle .conn-bar { opacity: 1; }
+html.we-no-dim body .dock-wrap.idle .dock-dim { opacity: 0; }
 
 /* 各部件显隐 */
 html.we-no-sheen body .lg-sheen { display: none !important; }

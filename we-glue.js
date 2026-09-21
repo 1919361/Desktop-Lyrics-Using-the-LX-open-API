@@ -28,8 +28,11 @@
         bgFile: '',
         bgBright: 0.62, bgBlur: 2.5, bgSat: 1.06, bgContrast: 1,
         bgZoom: 1, bgPos: 'center', bgVig: 1,
-        /* 氛围 */
-        pulse: 1, pulsePhoto: 0.5, audio: 0,
+        /* 氛围。pulse = 动态背景（专辑主色 + fBm 云雾）的律动强度；
+           pulsePhoto = 有背景图时那块动态背景的可见度，默认 0 = 有照片就让位给它
+           （照片本身已有明暗层次，再叠一层云雾会把画面搅浑、也抢歌词的视觉焦点）。
+           想留一点氛围时把它调上去即可。 */
+        pulse: 1, pulsePhoto: 0, audio: 0, bgDebug: false,
         /* 这两个颜色不是随手挑的：它们是原样式里 rgb(200,220,255) 和
            rgb(140,200,255) 反算成 0~1 小数的结果。写成 0.78/0.86/0.55/0.82
            这类"看着差不多"的值，四舍五入后会差 1 个色阶，
@@ -41,6 +44,8 @@
         /* 字体：一套设置同时管「歌词」和「天际屏背景字」，由 fontTarget 决定作用范围 */
         fontFamily: 'system', fontCustom: '', fontTarget: 'both', fontFile: '',
         sweep: true, charDim: 0.28, glow: 1, gapOn: true,
+        /* 翻译歌词：默认值 == 源 CSS 里的硬编码值（0.52 / 0.72 / 白） */
+        transOn: true, transScale: 0.3, transOpacity: 0.85, transColor: '1 1 1',
         /* 播放控件 */
         uiScale: 1, lift: 0,
         glassBlur: 24, glassSat: 1.85, glassBright: 1.06, glassRadius: 26,
@@ -175,25 +180,19 @@
     }
 
     /* ========================================================================
-     *  ② 背景律动强度：包一层壳
+     *  ② 背景律动强度 / 动态背景可见度
+     *  源页面已经不再有「同心圆呼吸层」，改成了一块 WebGL 的 fBm 云雾背景
+     *  （.bg-shader）。它的律动幅度由源页面 JS 读 CSS 变量 --bg-beat-k 决定，
+     *  可见度由 --bg-shader-op 决定 —— 两者都能直接被样式表覆盖，
+     *  所以这里不再需要「包一层壳改 opacity」那套。
      * ====================================================================== */
 
-    function wrapPulseLayer() {
-        var layer = document.getElementById('bgPulseLayer');
-        if (!layer || !layer.parentNode) return null;
-        if (layer.parentNode.classList &&
-            layer.parentNode.classList.contains('we-pulse-wrap')) return layer.parentNode;
-        var wrap = document.createElement('div');
-        wrap.className = 'we-pulse-wrap';
-        wrap.setAttribute('aria-hidden', 'true');
-        layer.parentNode.insertBefore(wrap, layer);   /* 占住原位，保持绘制顺序 */
-        wrap.appendChild(layer);
-        return wrap;
-    }
-
     function syncPulse() {
-        var k = S.pulse * (S.bgOn ? S.pulsePhoto : 1);
-        setVar('--we-pulse', k.toFixed(4));
+        /* 律动强度（乘在音乐能量上：越大，云雾随歌起伏得越明显） */
+        setVar('--we-pulse', S.pulse.toFixed(4));
+        /* 有背景图时动态背景的可见度：默认 0 = 让位给照片；
+           调上去就变成「照片 + 云雾叠加」。 */
+        setVar('--we-shader-photo', S.pulsePhoto.toFixed(4));
     }
 
     /* ========================================================================
@@ -201,6 +200,8 @@
      * ====================================================================== */
 
     var audioEl = null, audioRAF = 0, level = 0, spectrum = null;
+    var bassPeak = 0.02;                 /* 自适应增益的"这首歌的响度"参考值 */
+    var spectrumAt = 0;                  /* 最近一次收到频谱的时间戳（判"数据是否还新鲜"） */
 
     function audioEnergy(a) {
         if (!a || !a.length) return 0;
@@ -211,28 +212,57 @@
     }
 
     function audioTick() {
-        if (!audioEl) { audioRAF = 0; return; }
-        if (S.audio > 0 && spectrum) {
-            var target = Math.min(1, audioEnergy(spectrum) * 2.8) * S.audio;
-            /* 起得快、落得慢：像音量表的弹道，不是跟随式抖动 */
-            level += (target - level) * (target > level ? 0.5 : 0.09);
+        var raw = 0;
+        /* 数据"新鲜"才认：壁纸引擎停掉音频后不会再回调，但 spectrum 变量还留着
+           最后一次的数组 —— 不判新鲜度的话 level 会**冻在**最后一个值上，
+           画面就一直停在"高潮"状态（暂停/切歌时能明显看出来）。 */
+        var fresh = !!spectrum && (performance.now() - spectrumAt < 250);
+        if (fresh) {
+            raw = audioEnergy(spectrum);
+            /* 自适应增益：背景跟的是低频的**起伏**，而壁纸引擎给的频谱量纲并不保证是
+               0~1（不同版本/设备可能是 0~255，也可能整首歌都只有 0.0x）。
+               固定乘一个系数的话，量纲大的会被钳在满值（看起来"压根没跟低频动"）、
+               量纲小的几乎不动。这里用「近期峰值」归一化：
+                 · 峰值上得稍快、落得**很慢**（τ ≈ 20 秒）—— 参考的是"这首歌整体有多响"，
+                   而不是"上一帧/最近几秒有多响"。落得快会把安静段落也顶到满值，
+                   结果就是安静的段落照样满屏在动（这不符合 Apple Music 那种克制）；
+                 · raw / 峰值 → 无论量纲多大，鼓点一到都推到接近 1，安静段落自然回落。
+               结果是一条与量纲无关的 0~1 曲线，跟的就是低频的强弱变化。 */
+            if (raw > bassPeak) bassPeak += (raw - bassPeak) * 0.25;
+            else bassPeak += (raw - bassPeak) * 0.0008;
+            if (bassPeak < 0.008) bassPeak = 0.008;
+            var norm = Math.min(1, raw / bassPeak);
+            /* 弹道要「钝」。Apple Music 那块背景跟的是音乐的**能量包络**
+               （时间尺度约 0.2~0.5 秒），不是逐帧瞬态。
+               之前 0.55 / 0.10 的跟随几乎一帧就到，叠到画面上就是"闪眼睛"。
+               现在 τ_attack ≈ 10 帧（≈0.17s）、τ_release ≈ 22 帧（≈0.37s）。 */
+            level += (norm - level) * (norm > level ? 0.10 : 0.045);
         } else {
-            level *= 0.9;
+            /* 平滑落回 0（一阶指数，τ ≈ 0.27s），不要 *=0.9 那种陡降 */
+            level += (0 - level) * 0.06;
         }
-        if (level < 0.002) {
-            level = 0;
-            setVar('--we-audio', '0');
-            if (S.audio > 0) { audioRAF = requestAnimationFrame(audioTick); return; }
-            audioRAF = 0;
-            return;
+        /* 只做"看不见"的归零：这里的台阶在 0.4%~0 之间，不是突变 */
+        if (level < 0.004) level = 0;
+
+        /* 低频能量交给源页面的背景着色器：lyrics.html 每帧读 window.__weBass，
+           用它决定背景流动的快慢与亮度起伏。这一条不受 S.audio 影响 ——
+           背景跟低频是既定行为，「音频律动光晕」才是那个可选的光晕层。
+           另外两个是排查用的观测值（源页面的"低频调试表"会显示）。 */
+        window.__weBass = level;
+        window.__weBassRaw = raw;
+        window.__weBassPeak = bassPeak;
+
+        /* --we-audio 与光晕的缩放只服务于可选的「音频律动光晕」 */
+        if (S.audio > 0) {
+            setVar('--we-audio', level.toFixed(4));
+            if (audioEl) audioEl.style.transform = 'scale(' + (1 + level * 0.10).toFixed(4) + ')';
         }
-        setVar('--we-audio', level.toFixed(4));
-        audioEl.style.transform = 'scale(' + (1 + level * 0.10).toFixed(4) + ')';
+
         audioRAF = requestAnimationFrame(audioTick);
     }
 
     function startAudioLoop() {
-        if (audioRAF || !audioEl) return;
+        if (audioRAF) return;
         audioRAF = requestAnimationFrame(audioTick);
     }
 
@@ -410,6 +440,9 @@
 
         /* ---- 氛围 ---- */
         syncPulse();
+        /* 低频调试表（默认关）。用 HTML 属性而不是 CSS 变量 —— display 没法由变量驱动。 */
+        var dbgStage = document.getElementById('lyricStage');
+        if (dbgStage) dbgStage.setAttribute('data-bg-debug', S.bgDebug ? '1' : '0');
         setVar('--we-art-op', String(S.artOpacity));
         var artC = rgba(S.artColor, 0.5);
         if (artC) {
@@ -466,6 +499,11 @@
         var aGlow = rgba(S.accent, 0.9);
         if (aGlow) setVar('--we-audio-c', aGlow);
 
+        /* ---- 翻译歌词 ---- */
+        setVar('--we-trans-scale', S.transScale + 'em');
+        var trC = rgba(S.transColor, S.transOpacity);
+        if (trC) setVar('--we-trans-c', trC);
+
         /* ---- 播放控件 ---- */
         setVar('--we-ui-scale', String(S.uiScale));
         setVar('--we-lift', S.lift + 'px');
@@ -486,6 +524,7 @@
         var cl = root.classList;
         cl.toggle('we-no-sweep', !S.sweep);
         cl.toggle('we-no-gap', !S.gapOn);
+        cl.toggle('we-no-trans', !S.transOn);
         cl.toggle('we-no-art', !S.artOn);
         cl.toggle('we-no-glow', S.glow <= 0);
         cl.toggle('we-no-sheen', !S.sheen);
@@ -544,8 +583,9 @@
 
             /* ---- 氛围 ---- */
             if (p.pulse) S.pulse = pct(p.pulse.value, 100);
-            if (p.pulse_photo) S.pulsePhoto = pct(p.pulse_photo.value, 50);
+            if (p.pulse_photo) S.pulsePhoto = pct(p.pulse_photo.value, 0);
             if (p.audio_reactive) S.audio = pct(p.audio_reactive.value, 0);
+            if (p.bg_debug) S.bgDebug = !!p.bg_debug.value;
             if (p.art_enable) S.artOn = !!p.art_enable.value;
             if (p.art_opacity) S.artOpacity = pct(p.art_opacity.value, 100);
             if (p.art_color) S.artColor = p.art_color.value;
@@ -565,6 +605,12 @@
             if (p.lyric_char_dim) S.charDim = pct(p.lyric_char_dim.value, 28);
             if (p.lyric_glow) S.glow = pct(p.lyric_glow.value, 100);
             if (p.lyric_gap) S.gapOn = !!p.lyric_gap.value;
+
+            /* ---- 翻译歌词 ---- */
+            if (p.trans_enable) S.transOn = !!p.trans_enable.value;
+            if (p.trans_scale) S.transScale = num(p.trans_scale.value, S.transScale);
+            if (p.trans_opacity) S.transOpacity = num(p.trans_opacity.value, S.transOpacity);
+            if (p.trans_color) S.transColor = p.trans_color.value;
 
             /* ---- 播放控件 ---- */
             if (p.ui_scale) S.uiScale = num(p.ui_scale.value, S.uiScale);
@@ -606,9 +652,15 @@
         applyGeneralProperties: function () { /* 壁纸引擎的全局项（fps 等）暂不需要 */ }
     };
 
-    /* 音频频谱：壁纸引擎独有的能力，普通浏览器里这个函数不存在，自动跳过 */
+    /* 音频频谱：壁纸引擎独有的能力，普通浏览器里这个函数不存在，自动跳过。
+       拿到就立刻开始采集 —— 背景要跟着低频走，不能等到用户把「音频律动光晕」
+       那个可选项打开才开始采。 */
     if (typeof window.wallpaperRegisterAudioListener === 'function') {
-        window.wallpaperRegisterAudioListener(function (a) { spectrum = a; });
+        window.wallpaperRegisterAudioListener(function (a) {
+            spectrum = a;
+            spectrumAt = performance.now();      /* 打时间戳：audioTick 用它判数据是否还新鲜 */
+        });
+        startAudioLoop();
     }
 
     /* ========================================================================
@@ -617,7 +669,6 @@
      * ====================================================================== */
 
     function domReady() {
-        wrapPulseLayer();
         makeAudioLayer();
         apply();
 
