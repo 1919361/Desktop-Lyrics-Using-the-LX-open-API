@@ -1,573 +1,1105 @@
 {
-	"title": "沉浸歌词 · LX Music 逐字",
-	"type": "web",
-	"file": "index.html",
-	"preview": "preview.jpg",
-	"version": 1,
-	"tags": ["Music", "Lyrics", "Abstract"],
-	"general": {
-		"supportsaudioprocessing": true,
-		"properties": {
-			"schemecolor": {
-				"order": 0,
-				"text": "ui_browse_properties_scheme_color",
-				"type": "color",
-				"value": "0.30 0.62 1"
+	"contentrating" : "Everyone",
+	"description" : "桌面歌词 · Wallpaper Engine 工程，基于LX Music 开放API\n洛雪音乐Github地址：https://github.com/lyswhut/lx-music-desktop\n本项目Github地址：https://github.com/1919361/Desktop-Lyrics-Using-the-LX-open-API\nBiliBili主页：https://space.bilibili.com/330110028\n作者：BiliBili @Iambig191\n\n！！本项目基于LX Music开放API打造，需要搭配LX Music使用，使用时需在LX Music里启用开放API服务 本项目默认监听地址127.0.0.1，默认端口23330",
+	"file" : "index.html",
+	"general" : 
+	{
+		"properties" : 
+		{
+			"accent_color" : 
+			{
+				"index" : 0,
+				"order" : 100,
+				"text" : "强调色（当前歌词的光晕 / 音频律动）",
+				"type" : "color",
+				"value" : "0.549 0.7843 1"
 			},
-			"accent_color": {
-				"order": 1,
-				"text": "强调色（当前歌词的光晕 / 音频律动）",
-				"type": "color",
-				"value": "0.549 0.7843 1"
+			"api_host" : 
+			{
+				"index" : 53,
+				"order" : 153,
+				"text" : "服务器地址（IP 或域名）",
+				"type" : "textinput",
+				"value" : "127.0.0.1"
 			},
-
-			"grp_bg": {
-				"order": 10,
-				"text": "背景图片",
-				"type": "group"
+			"api_port" : 
+			{
+				"index" : 54,
+				"order" : 154,
+				"text" : "端口",
+				"type" : "textinput",
+				"value" : "23330"
 			},
-			"bg_enable": {
-				"order": 11,
-				"text": "使用背景图片",
-				"type": "bool",
-				"value": true
+			"art_color" : 
+			{
+				"index" : 18,
+				"order" : 118,
+				"text" : "天际屏字色",
+				"type" : "color",
+				"value" : "0.7843 0.8627 1"
 			},
-			"bg_file": {
-				"order": 12,
-				"text": "自定义背景图（留空则用工程自带的 backpicture.jpg）",
-				"type": "file",
-				"value": ""
+			"art_enable" : 
+			{
+				"index" : 16,
+				"order" : 116,
+				"text" : "显示天际屏（背景艺术字 / 音符）",
+				"type" : "bool",
+				"value" : true
 			},
-			"bg_bright": {
-				"order": 13,
-				"text": "亮度",
-				"type": "slider",
-				"value": 0.62,
-				"min": 0.2,
-				"max": 1.4,
-				"step": 0.02
+			"art_opacity" : 
+			{
+				"index" : 17,
+				"max" : 100,
+				"min" : 0,
+				"order" : 117,
+				"step" : 5,
+				"text" : "天际屏明暗（%）",
+				"type" : "slider",
+				"value" : 100
 			},
-			"bg_contrast": {
-				"order": 14,
-				"text": "对比度",
-				"type": "slider",
-				"value": 1,
-				"min": 0.6,
-				"max": 1.6,
-				"step": 0.02
+			"audio_reactive" : 
+			{
+				"index" : 14,
+				"max" : 150,
+				"min" : 0,
+				"order" : 114,
+				"step" : 5,
+				"text" : "音频光晕强度（% · 0 = 关闭）",
+				"type" : "slider",
+				"value" : 0
 			},
-			"bg_sat": {
-				"order": 15,
-				"text": "饱和度",
-				"type": "slider",
-				"value": 1.06,
-				"min": 0,
-				"max": 2,
-				"step": 0.02
+			"bg_blur" : 
+			{
+				"index" : 7,
+				"max" : 24,
+				"min" : 0,
+				"order" : 107,
+				"step" : 0.5,
+				"text" : "模糊（px）",
+				"type" : "slider",
+				"value" : 2.5
 			},
-			"bg_blur": {
-				"order": 16,
-				"text": "模糊（px）",
-				"type": "slider",
-				"value": 2.5,
-				"min": 0,
-				"max": 24,
-				"step": 0.5
+			"bg_bright" : 
+			{
+				"index" : 4,
+				"max" : 1.4,
+				"min" : 0.2,
+				"order" : 104,
+				"step" : 0.02,
+				"text" : "亮度",
+				"type" : "slider",
+				"value" : 0.62
 			},
-			"bg_zoom": {
-				"order": 17,
-				"text": "缩放",
-				"type": "slider",
-				"value": 1,
-				"min": 1,
-				"max": 1.6,
-				"step": 0.01
+			"bg_contrast" : 
+			{
+				"index" : 5,
+				"max" : 1.6,
+				"min" : 0.6,
+				"order" : 105,
+				"step" : 0.02,
+				"text" : "对比度",
+				"type" : "slider",
+				"value" : 1
 			},
-			"bg_pos": {
-				"order": 18,
-				"text": "对齐",
-				"type": "combo",
-				"value": "center",
-				"options": [
-					{ "label": "居中", "value": "center" },
-					{ "label": "顶部", "value": "center top" },
-					{ "label": "底部", "value": "center bottom" },
-					{ "label": "左侧", "value": "left center" },
-					{ "label": "右侧", "value": "right center" }
-				]
+			"bg_debug" : 
+			{
+				"index" : 15,
+				"order" : 115,
+				"text" : "显示低频调试表（排查：看背景收到的低频 / 有没有音频捕获）",
+				"type" : "bool",
+				"value" : false
 			},
-			"bg_vig": {
-				"order": 19,
-				"text": "压暗 / 暗角（保证白字压得住）",
-				"type": "slider",
-				"value": 1,
-				"min": 0,
-				"max": 2,
-				"step": 0.05
+			"bg_enable" : 
+			{
+				"index" : 2,
+				"order" : 102,
+				"text" : "使用背景图片",
+				"type" : "bool",
+				"value" : true
 			},
-
-			"grp_amb": {
-				"order": 20,
-				"text": "背景律动与氛围",
-				"type": "group"
+			"bg_file" : 
+			{
+				"index" : 3,
+				"order" : 103,
+				"text" : "自定义背景图（留空则用工程自带的 backpicture.jpg）",
+				"type" : "file",
+				"value" : ""
 			},
-			"pulse": {
-				"order": 21,
-				"text": "背景律动强度（%）",
-				"type": "slider",
-				"value": 100,
-				"min": 0,
-				"max": 200,
-				"step": 5
+			"bg_pos" : 
+			{
+				"index" : 9,
+				"options" : 
+				[
+					{
+						"label" : "居中",
+						"value" : "center"
+					},
+					{
+						"label" : "顶部",
+						"value" : "center top"
+					},
+					{
+						"label" : "底部",
+						"value" : "center bottom"
+					},
+					{
+						"label" : "左侧",
+						"value" : "left center"
+					},
+					{
+						"label" : "右侧",
+						"value" : "right center"
+					}
+				],
+				"order" : 109,
+				"text" : "对齐",
+				"type" : "combo",
+				"value" : "center"
 			},
-			"pulse_photo": {
-				"order": 22,
-				"text": "有背景图时的动态背景（%）",
-				"type": "slider",
-				"value": 0,
-				"min": 0,
-				"max": 100,
-				"step": 5
+			"bg_sat" : 
+			{
+				"index" : 6,
+				"max" : 2,
+				"min" : 0,
+				"order" : 106,
+				"step" : 0.02,
+				"text" : "饱和度",
+				"type" : "slider",
+				"value" : 1.06
 			},
-			"audio_reactive": {
-				"order": 23,
-				"text": "音频光晕强度（% · 0 = 关闭）",
-				"type": "slider",
-				"value": 0,
-				"min": 0,
-				"max": 150,
-				"step": 5
+			"bg_vig" : 
+			{
+				"index" : 10,
+				"max" : 2,
+				"min" : 0,
+				"order" : 110,
+				"step" : 0.05,
+				"text" : "压暗 / 暗角（保证白字压得住）",
+				"type" : "slider",
+				"value" : 1
 			},
-						"bg_debug": {
-				"order": 24,
-				"text": "显示低频调试表（排查：看背景收到的低频 / 有没有音频捕获）",
-				"type": "bool",
-				"value": false
+			"bg_zoom" : 
+			{
+				"index" : 8,
+				"max" : 1.6,
+				"min" : 1,
+				"order" : 108,
+				"step" : 0.01,
+				"text" : "缩放",
+				"type" : "slider",
+				"value" : 1
 			},
-"art_enable": {
-				"order": 25,
-				"text": "显示天际屏（背景艺术字 / 音符）",
-				"type": "bool",
-				"value": true
+			"dim_enable" : 
+			{
+				"index" : 47,
+				"order" : 147,
+				"text" : "指针不在控件上时变淡",
+				"type" : "bool",
+				"value" : true
 			},
-			"art_opacity": {
-				"order": 26,
-				"text": "天际屏明暗（%）",
-				"type": "slider",
-				"value": 100,
-				"min": 0,
-				"max": 100,
-				"step": 5
+			"dim_opacity" : 
+			{
+				"index" : 48,
+				"max" : 100,
+				"min" : 5,
+				"order" : 148,
+				"step" : 1,
+				"text" : "变淡后的不透明度（%）",
+				"type" : "slider",
+				"value" : 42
 			},
-			"art_color": {
-				"order": 27,
-				"text": "天际屏字色",
-				"type": "color",
-				"value": "0.7843 0.8627 1"
+			"font_custom" : 
+			{
+				"index" : 27,
+				"order" : 127,
+				"text" : "自定义字体名（填了以它为准；可用逗号写一整套）",
+				"type" : "textinput",
+				"value" : ""
 			},
-
-			"grp_lyric": {
-				"order": 30,
-				"text": "歌词",
-				"type": "group"
+			"font_family" : 
+			{
+				"index" : 26,
+				"options" : 
+				[
+					{
+						"label" : "自动 · 每次启动检测系统字体（推荐）",
+						"value" : "system"
+					},
+					{
+						"label" : "通用 · 无衬线（sans-serif）",
+						"value" : "sans-serif"
+					},
+					{
+						"label" : "通用 · 衬线（serif）",
+						"value" : "serif"
+					},
+					{
+						"label" : "通用 · 等宽（monospace）",
+						"value" : "monospace"
+					},
+					{
+						"label" : "微软雅黑 / Microsoft YaHei",
+						"value" : "Microsoft YaHei"
+					},
+					{
+						"label" : "Noto Sans SC",
+						"value" : "Noto Sans SC"
+					},
+					{
+						"label" : "微軟正黑體 / Microsoft JhengHei",
+						"value" : "Microsoft JhengHei"
+					},
+					{
+						"label" : "宋体 / SimSun",
+						"value" : "SimSun"
+					},
+					{
+						"label" : "黑体 / SimHei",
+						"value" : "SimHei"
+					},
+					{
+						"label" : "楷体 / KaiTi",
+						"value" : "KaiTi"
+					},
+					{
+						"label" : "仿宋 / FangSong",
+						"value" : "FangSong"
+					},
+					{
+						"label" : "等线 / DengXian",
+						"value" : "DengXian"
+					},
+					{
+						"label" : "方正舒体 / FZShuTi",
+						"value" : "FZShuTi"
+					},
+					{
+						"label" : "方正姚体 / FZYaoTi",
+						"value" : "FZYaoTi"
+					},
+					{
+						"label" : "冬青黑體繁體中文 / Hiragino Sans TC",
+						"value" : "Hiragino Sans TC"
+					},
+					{
+						"label" : "隶书 / LiSu",
+						"value" : "LiSu"
+					},
+					{
+						"label" : "Malgun Gothic",
+						"value" : "Malgun Gothic"
+					},
+					{
+						"label" : "Microsoft JhengHei UI",
+						"value" : "Microsoft JhengHei UI"
+					},
+					{
+						"label" : "Microsoft YaHei UI",
+						"value" : "Microsoft YaHei UI"
+					},
+					{
+						"label" : "MS Gothic",
+						"value" : "MS Gothic"
+					},
+					{
+						"label" : "MS PGothic",
+						"value" : "MS PGothic"
+					},
+					{
+						"label" : "MS UI Gothic",
+						"value" : "MS UI Gothic"
+					},
+					{
+						"label" : "Noto Serif SC",
+						"value" : "Noto Serif SC"
+					},
+					{
+						"label" : "新宋体 / NSimSun",
+						"value" : "NSimSun"
+					},
+					{
+						"label" : "华文彩云 / STCaiyun",
+						"value" : "STCaiyun"
+					},
+					{
+						"label" : "华文仿宋 / STFangsong",
+						"value" : "STFangsong"
+					},
+					{
+						"label" : "华文琥珀 / STHupo",
+						"value" : "STHupo"
+					},
+					{
+						"label" : "华文楷体 / STKaiti",
+						"value" : "STKaiti"
+					},
+					{
+						"label" : "华文隶书 / STLiti",
+						"value" : "STLiti"
+					},
+					{
+						"label" : "华文宋体 / STSong",
+						"value" : "STSong"
+					},
+					{
+						"label" : "华文细黑 / STXihei",
+						"value" : "STXihei"
+					},
+					{
+						"label" : "华文行楷 / STXingkai",
+						"value" : "STXingkai"
+					},
+					{
+						"label" : "华文新魏 / STXinwei",
+						"value" : "STXinwei"
+					},
+					{
+						"label" : "华文中宋 / STZhongsong",
+						"value" : "STZhongsong"
+					},
+					{
+						"label" : "幼圆 / YouYuan",
+						"value" : "YouYuan"
+					},
+					{
+						"label" : "Yu Gothic",
+						"value" : "Yu Gothic"
+					},
+					{
+						"label" : "Yu Gothic UI",
+						"value" : "Yu Gothic UI"
+					},
+					{
+						"label" : "yyb",
+						"value" : "yyb"
+					},
+					{
+						"label" : "草檀斋毛泽东字体",
+						"value" : "草檀斋毛泽东字体"
+					},
+					{
+						"label" : "Arial · 无汉字",
+						"value" : "Arial"
+					},
+					{
+						"label" : "Bahnschrift · 无汉字",
+						"value" : "Bahnschrift"
+					},
+					{
+						"label" : "Book Antiqua · 无汉字",
+						"value" : "Book Antiqua"
+					},
+					{
+						"label" : "Bookman Old Style · 无汉字",
+						"value" : "Bookman Old Style"
+					},
+					{
+						"label" : "Bookshelf Symbol 7 · 无汉字",
+						"value" : "Bookshelf Symbol 7"
+					},
+					{
+						"label" : "Bradley Hand ITC · 无汉字",
+						"value" : "Bradley Hand ITC"
+					},
+					{
+						"label" : "Calibri · 无汉字",
+						"value" : "Calibri"
+					},
+					{
+						"label" : "Cambria · 无汉字",
+						"value" : "Cambria"
+					},
+					{
+						"label" : "Cambria Math · 无汉字",
+						"value" : "Cambria Math"
+					},
+					{
+						"label" : "Candara · 无汉字",
+						"value" : "Candara"
+					},
+					{
+						"label" : "Cascadia Code · 无汉字",
+						"value" : "Cascadia Code"
+					},
+					{
+						"label" : "Cascadia Mono · 无汉字",
+						"value" : "Cascadia Mono"
+					},
+					{
+						"label" : "Century · 无汉字",
+						"value" : "Century"
+					},
+					{
+						"label" : "Century Gothic · 无汉字",
+						"value" : "Century Gothic"
+					},
+					{
+						"label" : "Comic Sans MS · 无汉字",
+						"value" : "Comic Sans MS"
+					},
+					{
+						"label" : "Consolas · 无汉字",
+						"value" : "Consolas"
+					},
+					{
+						"label" : "Constantia · 无汉字",
+						"value" : "Constantia"
+					},
+					{
+						"label" : "Corbel · 无汉字",
+						"value" : "Corbel"
+					},
+					{
+						"label" : "Courier New · 无汉字",
+						"value" : "Courier New"
+					},
+					{
+						"label" : "Dubai · 无汉字",
+						"value" : "Dubai"
+					},
+					{
+						"label" : "Ebrima · 无汉字",
+						"value" : "Ebrima"
+					},
+					{
+						"label" : "Franklin Gothic Medium · 无汉字",
+						"value" : "Franklin Gothic Medium"
+					},
+					{
+						"label" : "Freestyle Script · 无汉字",
+						"value" : "Freestyle Script"
+					},
+					{
+						"label" : "French Script MT · 无汉字",
+						"value" : "French Script MT"
+					},
+					{
+						"label" : "Gabriola · 无汉字",
+						"value" : "Gabriola"
+					},
+					{
+						"label" : "Gadugi · 无汉字",
+						"value" : "Gadugi"
+					},
+					{
+						"label" : "Garamond · 无汉字",
+						"value" : "Garamond"
+					},
+					{
+						"label" : "Georgia · 无汉字",
+						"value" : "Georgia"
+					},
+					{
+						"label" : "Impact · 无汉字",
+						"value" : "Impact"
+					},
+					{
+						"label" : "Ink Free · 无汉字",
+						"value" : "Ink Free"
+					},
+					{
+						"label" : "Javanese Text · 无汉字",
+						"value" : "Javanese Text"
+					},
+					{
+						"label" : "JetBrains Mono NL · 无汉字",
+						"value" : "JetBrains Mono NL"
+					},
+					{
+						"label" : "Juice ITC · 无汉字",
+						"value" : "Juice ITC"
+					},
+					{
+						"label" : "Kristen ITC · 无汉字",
+						"value" : "Kristen ITC"
+					},
+					{
+						"label" : "Leelawadee · 无汉字",
+						"value" : "Leelawadee"
+					},
+					{
+						"label" : "Leelawadee UI · 无汉字",
+						"value" : "Leelawadee UI"
+					},
+					{
+						"label" : "Lucida Console · 无汉字",
+						"value" : "Lucida Console"
+					},
+					{
+						"label" : "Lucida Handwriting · 无汉字",
+						"value" : "Lucida Handwriting"
+					},
+					{
+						"label" : "Lucida Sans Unicode · 无汉字",
+						"value" : "Lucida Sans Unicode"
+					},
+					{
+						"label" : "Marlett · 无汉字",
+						"value" : "Marlett"
+					},
+					{
+						"label" : "Microsoft Himalaya · 无汉字",
+						"value" : "Microsoft Himalaya"
+					},
+					{
+						"label" : "Microsoft New Tai Lue · 无汉字",
+						"value" : "Microsoft New Tai Lue"
+					},
+					{
+						"label" : "Microsoft PhagsPa · 无汉字",
+						"value" : "Microsoft PhagsPa"
+					},
+					{
+						"label" : "Microsoft Sans Serif · 无汉字",
+						"value" : "Microsoft Sans Serif"
+					},
+					{
+						"label" : "Microsoft Tai Le · 无汉字",
+						"value" : "Microsoft Tai Le"
+					},
+					{
+						"label" : "Microsoft Uighur · 无汉字",
+						"value" : "Microsoft Uighur"
+					},
+					{
+						"label" : "Microsoft Yi Baiti · 无汉字",
+						"value" : "Microsoft Yi Baiti"
+					},
+					{
+						"label" : "細明體-ExtB / MingLiU-ExtB · 无汉字",
+						"value" : "MingLiU-ExtB"
+					},
+					{
+						"label" : "細明體_HKSCS-ExtB / MingLiU_HKSCS-ExtB · 无汉字",
+						"value" : "MingLiU_HKSCS-ExtB"
+					},
+					{
+						"label" : "細明體_MSCS-ExtB / MingLiU_MSCS-ExtB · 无汉字",
+						"value" : "MingLiU_MSCS-ExtB"
+					},
+					{
+						"label" : "Mistral · 无汉字",
+						"value" : "Mistral"
+					},
+					{
+						"label" : "Mongolian Baiti · 无汉字",
+						"value" : "Mongolian Baiti"
+					},
+					{
+						"label" : "Monotype Corsiva · 无汉字",
+						"value" : "Monotype Corsiva"
+					},
+					{
+						"label" : "MS Reference Sans Serif · 无汉字",
+						"value" : "MS Reference Sans Serif"
+					},
+					{
+						"label" : "MS Reference Specialty · 无汉字",
+						"value" : "MS Reference Specialty"
+					},
+					{
+						"label" : "MT Extra · 无汉字",
+						"value" : "MT Extra"
+					},
+					{
+						"label" : "MV Boli · 无汉字",
+						"value" : "MV Boli"
+					},
+					{
+						"label" : "Myanmar Text · 无汉字",
+						"value" : "Myanmar Text"
+					},
+					{
+						"label" : "Nirmala Text · 无汉字",
+						"value" : "Nirmala Text"
+					},
+					{
+						"label" : "Nirmala UI · 无汉字",
+						"value" : "Nirmala UI"
+					},
+					{
+						"label" : "Palatino Linotype · 无汉字",
+						"value" : "Palatino Linotype"
+					},
+					{
+						"label" : "Papyrus · 无汉字",
+						"value" : "Papyrus"
+					},
+					{
+						"label" : "新細明體-ExtB / PMingLiU-ExtB · 无汉字",
+						"value" : "PMingLiU-ExtB"
+					},
+					{
+						"label" : "Pristina · 无汉字",
+						"value" : "Pristina"
+					},
+					{
+						"label" : "Sans Serif Collection · 无汉字",
+						"value" : "Sans Serif Collection"
+					},
+					{
+						"label" : "Segoe Fluent Icons · 无汉字",
+						"value" : "Segoe Fluent Icons"
+					},
+					{
+						"label" : "Segoe MDL2 Assets · 无汉字",
+						"value" : "Segoe MDL2 Assets"
+					},
+					{
+						"label" : "Segoe Print · 无汉字",
+						"value" : "Segoe Print"
+					},
+					{
+						"label" : "Segoe Script · 无汉字",
+						"value" : "Segoe Script"
+					},
+					{
+						"label" : "Segoe UI · 无汉字",
+						"value" : "Segoe UI"
+					},
+					{
+						"label" : "Segoe UI Emoji · 无汉字",
+						"value" : "Segoe UI Emoji"
+					},
+					{
+						"label" : "Segoe UI Historic · 无汉字",
+						"value" : "Segoe UI Historic"
+					},
+					{
+						"label" : "Segoe UI Symbol · 无汉字",
+						"value" : "Segoe UI Symbol"
+					},
+					{
+						"label" : "Segoe UI Variable · 无汉字",
+						"value" : "Segoe UI Variable"
+					},
+					{
+						"label" : "SimSun-ExtB · 无汉字",
+						"value" : "SimSun-ExtB"
+					},
+					{
+						"label" : "SimSun-ExtG · 无汉字",
+						"value" : "SimSun-ExtG"
+					},
+					{
+						"label" : "Sitka · 无汉字",
+						"value" : "Sitka"
+					},
+					{
+						"label" : "Sylfaen · 无汉字",
+						"value" : "Sylfaen"
+					},
+					{
+						"label" : "Symbol · 无汉字",
+						"value" : "Symbol"
+					},
+					{
+						"label" : "Tahoma · 无汉字",
+						"value" : "Tahoma"
+					},
+					{
+						"label" : "Tempus Sans ITC · 无汉字",
+						"value" : "Tempus Sans ITC"
+					},
+					{
+						"label" : "Times New Roman · 无汉字",
+						"value" : "Times New Roman"
+					},
+					{
+						"label" : "Trebuchet MS · 无汉字",
+						"value" : "Trebuchet MS"
+					},
+					{
+						"label" : "Verdana · 无汉字",
+						"value" : "Verdana"
+					},
+					{
+						"label" : "Webdings · 无汉字",
+						"value" : "Webdings"
+					},
+					{
+						"label" : "Wingdings · 无汉字",
+						"value" : "Wingdings"
+					},
+					{
+						"label" : "Wingdings 2 · 无汉字",
+						"value" : "Wingdings 2"
+					},
+					{
+						"label" : "Wingdings 3 · 无汉字",
+						"value" : "Wingdings 3"
+					}
+				],
+				"order" : 126,
+				"text" : "字体（歌词 / 天际屏）",
+				"type" : "combo",
+				"value" : "system"
 			},
-			"lyric_scale": {
-				"order": 31,
-				"text": "歌词字号（倍率）",
-				"type": "slider",
-				"value": 1,
-				"min": 0.5,
-				"max": 2.5,
-				"step": 0.02
+			"font_file" : 
+			{
+				"index" : 29,
+				"order" : 129,
+				"text" : "字体文件（可选 · 把 ttf/otf 放进工程目录再选它）",
+				"type" : "file",
+				"value" : ""
 			},
-			"lyric_active_scale": {
-				"order": 32,
-				"text": "当前行放大倍率",
-				"type": "slider",
-				"value": 2,
-				"min": 1.2,
-				"max": 4,
-				"step": 0.05
+			"font_target" : 
+			{
+				"index" : 28,
+				"options" : 
+				[
+					{
+						"label" : "歌词 + 天际屏（一起换）",
+						"value" : "both"
+					},
+					{
+						"label" : "只换歌词",
+						"value" : "lyric"
+					},
+					{
+						"label" : "只换天际屏背景字",
+						"value" : "art"
+					}
+				],
+				"order" : 128,
+				"text" : "字体作用范围",
+				"type" : "combo",
+				"value" : "both"
 			},
-			"lyric_dim": {
-				"order": 33,
-				"text": "非当前行的模糊 / 变暗程度（0 = 不虚化）",
-				"type": "slider",
-				"value": 1,
-				"min": 0,
-				"max": 2,
-				"step": 0.05
+			"glass_blur" : 
+			{
+				"index" : 43,
+				"max" : 60,
+				"min" : 0,
+				"order" : 143,
+				"step" : 2,
+				"text" : "状态条磨砂强度（px · 播放控件为纯折射无模糊）",
+				"type" : "slider",
+				"value" : 16
 			},
-			"lyric_line_height": {
-				"order": 34,
-				"text": "行高",
-				"type": "slider",
-				"value": 1.5,
-				"min": 1.1,
-				"max": 2.2,
-				"step": 0.02
+			"glass_bright" : 
+			{
+				"index" : 45,
+				"max" : 1.8,
+				"min" : 0.6,
+				"order" : 145,
+				"step" : 0.02,
+				"text" : "玻璃透出的亮度",
+				"type" : "slider",
+				"value" : 1.06
 			},
-			"lyric_align": {
-				"order": 35,
-				"text": "水平对齐",
-				"type": "combo",
-				"value": "center",
-				"options": [
-					{ "label": "居中", "value": "center" },
-					{ "label": "左对齐", "value": "left" },
-					{ "label": "右对齐", "value": "right" }
-				]
+			"glass_radius" : 
+			{
+				"index" : 42,
+				"max" : 40,
+				"min" : 0,
+				"order" : 142,
+				"step" : 1,
+				"text" : "圆角（px · 内层自动同心）",
+				"type" : "slider",
+				"value" : 26
 			},
-			"lyric_pad": {
-				"order": 36,
-				"text": "左右留白（%）",
-				"type": "slider",
-				"value": 6,
-				"min": 0,
-				"max": 20,
-				"step": 0.5
+			"glass_sat" : 
+			{
+				"index" : 44,
+				"max" : 3,
+				"min" : 1,
+				"order" : 144,
+				"step" : 0.05,
+				"text" : "玻璃透出的饱和度",
+				"type" : "slider",
+				"value" : 1.9
 			},
-			"font_family": {
-			"order": 37,
-			"text": "字体（歌词 / 天际屏）",
-			"type": "combo",
-			"value": "system",
-			"options": [
-				{ "label": "跟随原样式（不改变字体）", "value": "system" },
-				{ "label": "通用 · 无衬线（sans-serif）", "value": "sans-serif" },
-				{ "label": "通用 · 衬线（serif）", "value": "serif" },
-				{ "label": "通用 · 等宽（monospace）", "value": "monospace" },
-				{ "label": "微软雅黑 / Microsoft YaHei", "value": "Microsoft YaHei" },
-				{ "label": "Noto Sans SC", "value": "Noto Sans SC" },
-				{ "label": "微軟正黑體 / Microsoft JhengHei", "value": "Microsoft JhengHei" },
-				{ "label": "宋体 / SimSun", "value": "SimSun" },
-				{ "label": "黑体 / SimHei", "value": "SimHei" },
-				{ "label": "楷体 / KaiTi", "value": "KaiTi" },
-				{ "label": "仿宋 / FangSong", "value": "FangSong" },
-				{ "label": "等线 / DengXian", "value": "DengXian" },
-				{ "label": "方正舒体 / FZShuTi", "value": "FZShuTi" },
-				{ "label": "方正姚体 / FZYaoTi", "value": "FZYaoTi" },
-				{ "label": "冬青黑體繁體中文 / Hiragino Sans TC", "value": "Hiragino Sans TC" },
-				{ "label": "隶书 / LiSu", "value": "LiSu" },
-				{ "label": "Malgun Gothic", "value": "Malgun Gothic" },
-				{ "label": "Microsoft JhengHei UI", "value": "Microsoft JhengHei UI" },
-				{ "label": "Microsoft YaHei UI", "value": "Microsoft YaHei UI" },
-				{ "label": "MS Gothic", "value": "MS Gothic" },
-				{ "label": "MS PGothic", "value": "MS PGothic" },
-				{ "label": "MS UI Gothic", "value": "MS UI Gothic" },
-				{ "label": "Noto Serif SC", "value": "Noto Serif SC" },
-				{ "label": "新宋体 / NSimSun", "value": "NSimSun" },
-				{ "label": "华文彩云 / STCaiyun", "value": "STCaiyun" },
-				{ "label": "华文仿宋 / STFangsong", "value": "STFangsong" },
-				{ "label": "华文琥珀 / STHupo", "value": "STHupo" },
-				{ "label": "华文楷体 / STKaiti", "value": "STKaiti" },
-				{ "label": "华文隶书 / STLiti", "value": "STLiti" },
-				{ "label": "华文宋体 / STSong", "value": "STSong" },
-				{ "label": "华文细黑 / STXihei", "value": "STXihei" },
-				{ "label": "华文行楷 / STXingkai", "value": "STXingkai" },
-				{ "label": "华文新魏 / STXinwei", "value": "STXinwei" },
-				{ "label": "华文中宋 / STZhongsong", "value": "STZhongsong" },
-				{ "label": "幼圆 / YouYuan", "value": "YouYuan" },
-				{ "label": "Yu Gothic", "value": "Yu Gothic" },
-				{ "label": "Yu Gothic UI", "value": "Yu Gothic UI" },
-				{ "label": "yyb", "value": "yyb" },
-				{ "label": "草檀斋毛泽东字体", "value": "草檀斋毛泽东字体" },
-				{ "label": "Arial · 无汉字", "value": "Arial" },
-				{ "label": "Bahnschrift · 无汉字", "value": "Bahnschrift" },
-				{ "label": "Book Antiqua · 无汉字", "value": "Book Antiqua" },
-				{ "label": "Bookman Old Style · 无汉字", "value": "Bookman Old Style" },
-				{ "label": "Bookshelf Symbol 7 · 无汉字", "value": "Bookshelf Symbol 7" },
-				{ "label": "Bradley Hand ITC · 无汉字", "value": "Bradley Hand ITC" },
-				{ "label": "Calibri · 无汉字", "value": "Calibri" },
-				{ "label": "Cambria · 无汉字", "value": "Cambria" },
-				{ "label": "Cambria Math · 无汉字", "value": "Cambria Math" },
-				{ "label": "Candara · 无汉字", "value": "Candara" },
-				{ "label": "Cascadia Code · 无汉字", "value": "Cascadia Code" },
-				{ "label": "Cascadia Mono · 无汉字", "value": "Cascadia Mono" },
-				{ "label": "Century · 无汉字", "value": "Century" },
-				{ "label": "Century Gothic · 无汉字", "value": "Century Gothic" },
-				{ "label": "Comic Sans MS · 无汉字", "value": "Comic Sans MS" },
-				{ "label": "Consolas · 无汉字", "value": "Consolas" },
-				{ "label": "Constantia · 无汉字", "value": "Constantia" },
-				{ "label": "Corbel · 无汉字", "value": "Corbel" },
-				{ "label": "Courier New · 无汉字", "value": "Courier New" },
-				{ "label": "Dubai · 无汉字", "value": "Dubai" },
-				{ "label": "Ebrima · 无汉字", "value": "Ebrima" },
-				{ "label": "Franklin Gothic Medium · 无汉字", "value": "Franklin Gothic Medium" },
-				{ "label": "Freestyle Script · 无汉字", "value": "Freestyle Script" },
-				{ "label": "French Script MT · 无汉字", "value": "French Script MT" },
-				{ "label": "Gabriola · 无汉字", "value": "Gabriola" },
-				{ "label": "Gadugi · 无汉字", "value": "Gadugi" },
-				{ "label": "Garamond · 无汉字", "value": "Garamond" },
-				{ "label": "Georgia · 无汉字", "value": "Georgia" },
-				{ "label": "Impact · 无汉字", "value": "Impact" },
-				{ "label": "Ink Free · 无汉字", "value": "Ink Free" },
-				{ "label": "Javanese Text · 无汉字", "value": "Javanese Text" },
-				{ "label": "JetBrains Mono NL · 无汉字", "value": "JetBrains Mono NL" },
-				{ "label": "Juice ITC · 无汉字", "value": "Juice ITC" },
-				{ "label": "Kristen ITC · 无汉字", "value": "Kristen ITC" },
-				{ "label": "Leelawadee · 无汉字", "value": "Leelawadee" },
-				{ "label": "Leelawadee UI · 无汉字", "value": "Leelawadee UI" },
-				{ "label": "Lucida Console · 无汉字", "value": "Lucida Console" },
-				{ "label": "Lucida Handwriting · 无汉字", "value": "Lucida Handwriting" },
-				{ "label": "Lucida Sans Unicode · 无汉字", "value": "Lucida Sans Unicode" },
-				{ "label": "Marlett · 无汉字", "value": "Marlett" },
-				{ "label": "Microsoft Himalaya · 无汉字", "value": "Microsoft Himalaya" },
-				{ "label": "Microsoft New Tai Lue · 无汉字", "value": "Microsoft New Tai Lue" },
-				{ "label": "Microsoft PhagsPa · 无汉字", "value": "Microsoft PhagsPa" },
-				{ "label": "Microsoft Sans Serif · 无汉字", "value": "Microsoft Sans Serif" },
-				{ "label": "Microsoft Tai Le · 无汉字", "value": "Microsoft Tai Le" },
-				{ "label": "Microsoft Uighur · 无汉字", "value": "Microsoft Uighur" },
-				{ "label": "Microsoft Yi Baiti · 无汉字", "value": "Microsoft Yi Baiti" },
-				{ "label": "細明體-ExtB / MingLiU-ExtB · 无汉字", "value": "MingLiU-ExtB" },
-				{ "label": "細明體_HKSCS-ExtB / MingLiU_HKSCS-ExtB · 无汉字", "value": "MingLiU_HKSCS-ExtB" },
-				{ "label": "細明體_MSCS-ExtB / MingLiU_MSCS-ExtB · 无汉字", "value": "MingLiU_MSCS-ExtB" },
-				{ "label": "Mistral · 无汉字", "value": "Mistral" },
-				{ "label": "Mongolian Baiti · 无汉字", "value": "Mongolian Baiti" },
-				{ "label": "Monotype Corsiva · 无汉字", "value": "Monotype Corsiva" },
-				{ "label": "MS Reference Sans Serif · 无汉字", "value": "MS Reference Sans Serif" },
-				{ "label": "MS Reference Specialty · 无汉字", "value": "MS Reference Specialty" },
-				{ "label": "MT Extra · 无汉字", "value": "MT Extra" },
-				{ "label": "MV Boli · 无汉字", "value": "MV Boli" },
-				{ "label": "Myanmar Text · 无汉字", "value": "Myanmar Text" },
-				{ "label": "Nirmala Text · 无汉字", "value": "Nirmala Text" },
-				{ "label": "Nirmala UI · 无汉字", "value": "Nirmala UI" },
-				{ "label": "Palatino Linotype · 无汉字", "value": "Palatino Linotype" },
-				{ "label": "Papyrus · 无汉字", "value": "Papyrus" },
-				{ "label": "新細明體-ExtB / PMingLiU-ExtB · 无汉字", "value": "PMingLiU-ExtB" },
-				{ "label": "Pristina · 无汉字", "value": "Pristina" },
-				{ "label": "Sans Serif Collection · 无汉字", "value": "Sans Serif Collection" },
-				{ "label": "Segoe Fluent Icons · 无汉字", "value": "Segoe Fluent Icons" },
-				{ "label": "Segoe MDL2 Assets · 无汉字", "value": "Segoe MDL2 Assets" },
-				{ "label": "Segoe Print · 无汉字", "value": "Segoe Print" },
-				{ "label": "Segoe Script · 无汉字", "value": "Segoe Script" },
-				{ "label": "Segoe UI · 无汉字", "value": "Segoe UI" },
-				{ "label": "Segoe UI Emoji · 无汉字", "value": "Segoe UI Emoji" },
-				{ "label": "Segoe UI Historic · 无汉字", "value": "Segoe UI Historic" },
-				{ "label": "Segoe UI Symbol · 无汉字", "value": "Segoe UI Symbol" },
-				{ "label": "Segoe UI Variable · 无汉字", "value": "Segoe UI Variable" },
-				{ "label": "SimSun-ExtB · 无汉字", "value": "SimSun-ExtB" },
-				{ "label": "SimSun-ExtG · 无汉字", "value": "SimSun-ExtG" },
-				{ "label": "Sitka · 无汉字", "value": "Sitka" },
-				{ "label": "Sylfaen · 无汉字", "value": "Sylfaen" },
-				{ "label": "Symbol · 无汉字", "value": "Symbol" },
-				{ "label": "Tahoma · 无汉字", "value": "Tahoma" },
-				{ "label": "Tempus Sans ITC · 无汉字", "value": "Tempus Sans ITC" },
-				{ "label": "Times New Roman · 无汉字", "value": "Times New Roman" },
-				{ "label": "Trebuchet MS · 无汉字", "value": "Trebuchet MS" },
-				{ "label": "Verdana · 无汉字", "value": "Verdana" },
-				{ "label": "Webdings · 无汉字", "value": "Webdings" },
-				{ "label": "Wingdings · 无汉字", "value": "Wingdings" },
-				{ "label": "Wingdings 2 · 无汉字", "value": "Wingdings 2" },
-				{ "label": "Wingdings 3 · 无汉字", "value": "Wingdings 3" }
-			]
-		},
-			"font_custom": {
-				"order": 38,
-				"text": "自定义字体名（填了以它为准；可用逗号写一整套）",
-				"type": "textinput",
-				"value": ""
+			"glass_sheen" : 
+			{
+				"index" : 46,
+				"order" : 146,
+				"text" : "液态高光（跟随指针 + 自主游走）",
+				"type" : "bool",
+				"value" : true
 			},
-			"font_target": {
-				"order": 39,
-				"text": "字体作用范围",
-				"type": "combo",
-				"value": "both",
-				"options": [
-					{ "label": "歌词 + 天际屏（一起换）", "value": "both" },
-					{ "label": "只换歌词", "value": "lyric" },
-					{ "label": "只换天际屏背景字", "value": "art" }
-				]
+			"grp_amb" : 
+			{
+				"index" : 11,
+				"order" : 111,
+				"text" : "背景律动与氛围",
+				"type" : "group"
 			},
-			"font_file": {
-				"order": 40,
-				"text": "字体文件（可选 · 把 ttf/otf 放进工程目录再选它）",
-				"type": "file",
-				"value": ""
+			"grp_api" : 
+			{
+				"index" : 52,
+				"order" : 152,
+				"text" : "LX Music 开放 API",
+				"type" : "group"
 			},
-			"lyric_sweep": {
-				"order": 41,
-				"text": "逐字扫光（关掉 = 整句直接点亮）",
-				"type": "bool",
-				"value": true
+			"grp_bg" : 
+			{
+				"index" : 1,
+				"order" : 101,
+				"text" : "背景图片",
+				"type" : "group"
 			},
-			"lyric_char_dim": {
-				"order": 42,
-				"text": "未唱到的字的不透明度（%）",
-				"type": "slider",
-				"value": 28,
-				"min": 0,
-				"max": 100,
-				"step": 2
+			"grp_dock" : 
+			{
+				"index" : 39,
+				"order" : 139,
+				"text" : "播放控件",
+				"type" : "group"
 			},
-			"lyric_glow": {
-				"order": 43,
-				"text": "当前字光晕强度（% · 0 = 关闭）",
-				"type": "slider",
-				"value": 100,
-				"min": 0,
-				"max": 250,
-				"step": 10
+			"grp_lyric" : 
+			{
+				"index" : 19,
+				"order" : 119,
+				"text" : "歌词",
+				"type" : "group"
 			},
-			"lyric_gap": {
-				"order": 44,
-				"text": "间奏等待点（· · ·）",
-				"type": "bool",
-				"value": true
+			"grp_trans" : 
+			{
+				"index" : 34,
+				"order" : 134,
+				"text" : "翻译歌词",
+				"type" : "group"
 			},
-
-			"grp_trans": {
-				"order": 45,
-				"text": "翻译歌词",
-				"type": "group"
+			"lyric_active_scale" : 
+			{
+				"index" : 21,
+				"max" : 4,
+				"min" : 1.2,
+				"order" : 121,
+				"step" : 0.05,
+				"text" : "当前行放大倍率",
+				"type" : "slider",
+				"value" : 2
 			},
-			"trans_enable": {
-				"order": 46,
-				"text": "显示翻译歌词（当前句左下角）",
-				"type": "bool",
-				"value": true
+			"lyric_align" : 
+			{
+				"index" : 24,
+				"options" : 
+				[
+					{
+						"label" : "居中",
+						"value" : "center"
+					},
+					{
+						"label" : "左对齐",
+						"value" : "left"
+					},
+					{
+						"label" : "右对齐",
+						"value" : "right"
+					}
+				],
+				"order" : 124,
+				"text" : "水平对齐",
+				"type" : "combo",
+				"value" : "center"
 			},
-			"trans_scale": {
-				"order": 47,
-				"text": "翻译字号（相对主歌词）",
-				"type": "slider",
-				"value": 0.3,
-				"min": 0.2,
-				"max": 0.5,
-				"step": 0.02
+			"lyric_char_dim" : 
+			{
+				"index" : 31,
+				"max" : 100,
+				"min" : 0,
+				"order" : 131,
+				"step" : 2,
+				"text" : "未唱到的字的不透明度（%）",
+				"type" : "slider",
+				"value" : 28
 			},
-			"trans_opacity": {
-				"order": 48,
-				"text": "翻译不透明度",
-				"type": "slider",
-				"value": 0.85,
-				"min": 0.1,
-				"max": 1,
-				"step": 0.02
+			"lyric_dim" : 
+			{
+				"index" : 22,
+				"max" : 2,
+				"min" : 0,
+				"order" : 122,
+				"step" : 0.05,
+				"text" : "非当前行的模糊 / 变暗程度（0 = 不虚化）",
+				"type" : "slider",
+				"value" : 1
 			},
-			"trans_color": {
-				"order": 49,
-				"text": "翻译文字颜色",
-				"type": "color",
-				"value": "1 1 1"
+			"lyric_gap" : 
+			{
+				"index" : 33,
+				"order" : 133,
+				"text" : "间奏等待点（· · ·）",
+				"type" : "bool",
+				"value" : true
 			},
-
-			"grp_dock": {
-				"order": 50,
-				"text": "播放控件",
-				"type": "group"
+			"lyric_glow" : 
+			{
+				"index" : 32,
+				"max" : 250,
+				"min" : 0,
+				"order" : 132,
+				"step" : 10,
+				"text" : "当前字光晕强度（% · 0 = 关闭）",
+				"type" : "slider",
+				"value" : 100
 			},
-			"ui_scale": {
-				"order": 51,
-				"text": "控件整体大小（倍率 · 窄屏自动失效）",
-				"type": "slider",
-				"value": 1,
-				"min": 0.6,
-				"max": 1.6,
-				"step": 0.02
+			"lyric_line_height" : 
+			{
+				"index" : 23,
+				"max" : 2.2,
+				"min" : 1.1,
+				"order" : 123,
+				"step" : 0.02,
+				"text" : "行高",
+				"type" : "slider",
+				"value" : 1.5
 			},
-			"ui_lift": {
-				"order": 52,
-				"text": "离底部再抬高（px）",
-				"type": "slider",
-				"value": 0,
-				"min": -20,
-				"max": 260,
-				"step": 4
+			"lyric_pad" : 
+			{
+				"index" : 25,
+				"max" : 20,
+				"min" : 0,
+				"order" : 125,
+				"step" : 0.5,
+				"text" : "左右留白（%）",
+				"type" : "slider",
+				"value" : 6
 			},
-			"glass_radius": {
-				"order": 53,
-				"text": "圆角（px · 内层自动同心）",
-				"type": "slider",
-				"value": 26,
-				"min": 0,
-				"max": 40,
-				"step": 1
+			"lyric_scale" : 
+			{
+				"index" : 20,
+				"max" : 2.5,
+				"min" : 0.5,
+				"order" : 120,
+				"step" : 0.02,
+				"text" : "歌词字号（倍率）",
+				"type" : "slider",
+				"value" : 1
 			},
-			"glass_blur": {
-				"order": 54,
-				"text": "玻璃磨砂强度（px）",
-				"type": "slider",
-				"value": 16,
-				"min": 0,
-				"max": 60,
-				"step": 2
+			"lyric_sweep" : 
+			{
+				"index" : 30,
+				"order" : 130,
+				"text" : "逐字扫光（关掉 = 整句直接点亮）",
+				"type" : "bool",
+				"value" : true
 			},
-			"glass_sat": {
-				"order": 55,
-				"text": "玻璃透出的饱和度",
-				"type": "slider",
-				"value": 1.9,
-				"min": 1,
-				"max": 3,
-				"step": 0.05
+			"pulse" : 
+			{
+				"index" : 12,
+				"max" : 200,
+				"min" : 0,
+				"order" : 112,
+				"step" : 5,
+				"text" : "背景律动强度（%）",
+				"type" : "slider",
+				"value" : 100
 			},
-			"glass_bright": {
-				"order": 56,
-				"text": "玻璃透出的亮度",
-				"type": "slider",
-				"value": 1.06,
-				"min": 0.6,
-				"max": 1.8,
-				"step": 0.02
+			"pulse_photo" : 
+			{
+				"index" : 13,
+				"max" : 100,
+				"min" : 0,
+				"order" : 113,
+				"step" : 5,
+				"text" : "有背景图时的动态背景（%）",
+				"type" : "slider",
+				"value" : 0
 			},
-			"glass_sheen": {
-				"order": 57,
-				"text": "液态高光（跟随指针 + 自主游走）",
-				"type": "bool",
-				"value": true
+			"schemecolor" : 
+			{
+				"order" : 0,
+				"text" : "ui_browse_properties_scheme_color",
+				"type" : "color",
+				"value" : "0.30 0.62 1"
 			},
-			"dim_enable": {
-				"order": 58,
-				"text": "指针不在控件上时变淡",
-				"type": "bool",
-				"value": true
+			"show_chip" : 
+			{
+				"index" : 49,
+				"order" : 149,
+				"text" : "显示连接状态小条",
+				"type" : "bool",
+				"value" : true
 			},
-			"dim_opacity": {
-				"order": 59,
-				"text": "变淡后的不透明度（%）",
-				"type": "slider",
-				"value": 42,
-				"min": 5,
-				"max": 100,
-				"step": 1
+			"show_collect" : 
+			{
+				"index" : 51,
+				"order" : 151,
+				"text" : "显示收藏按钮",
+				"type" : "bool",
+				"value" : true
 			},
-			"show_chip": {
-				"order": 60,
-				"text": "显示连接状态小条",
-				"type": "bool",
-				"value": true
+			"show_volume" : 
+			{
+				"index" : 50,
+				"order" : 150,
+				"text" : "显示音量条",
+				"type" : "bool",
+				"value" : true
 			},
-			"show_volume": {
-				"order": 61,
-				"text": "显示音量条",
-				"type": "bool",
-				"value": true
+			"trans_color" : 
+			{
+				"index" : 38,
+				"order" : 138,
+				"text" : "翻译文字颜色",
+				"type" : "color",
+				"value" : "1 1 1"
 			},
-			"show_collect": {
-				"order": 62,
-				"text": "显示收藏按钮",
-				"type": "bool",
-				"value": true
+			"trans_enable" : 
+			{
+				"index" : 35,
+				"order" : 135,
+				"text" : "显示翻译歌词（当前句左下角）",
+				"type" : "bool",
+				"value" : true
 			},
-
-			"grp_api": {
-				"order": 70,
-				"text": "LX Music 开放 API",
-				"type": "group"
+			"trans_opacity" : 
+			{
+				"index" : 37,
+				"max" : 1,
+				"min" : 0.1,
+				"order" : 137,
+				"step" : 0.02,
+				"text" : "翻译不透明度",
+				"type" : "slider",
+				"value" : 0.85
 			},
-			"api_host": {
-				"order": 71,
-				"text": "服务器地址（IP 或域名）",
-				"type": "textinput",
-				"value": "127.0.0.1"
+			"trans_scale" : 
+			{
+				"index" : 36,
+				"max" : 0.5,
+				"min" : 0.2,
+				"order" : 136,
+				"step" : 0.02,
+				"text" : "翻译字号（相对主歌词）",
+				"type" : "slider",
+				"value" : 0.3
 			},
-			"api_port": {
-				"order": 72,
-				"text": "端口",
-				"type": "textinput",
-				"value": "23330"
+			"ui_lift" : 
+			{
+				"index" : 41,
+				"max" : 260,
+				"min" : -20,
+				"order" : 141,
+				"step" : 4,
+				"text" : "离底部再抬高（px）",
+				"type" : "slider",
+				"value" : 0
+			},
+			"ui_scale" : 
+			{
+				"index" : 40,
+				"max" : 1.6,
+				"min" : 0.6,
+				"order" : 140,
+				"step" : 0.02,
+				"text" : "控件整体大小（倍率 · 窄屏自动失效）",
+				"type" : "slider",
+				"value" : 1
 			}
-		}
-	}
+		},
+		"supportsaudioprocessing" : true
+	},
+	"preview" : "preview.jpg",
+	"ratingsex" : "none",
+	"ratingviolence" : "none",
+	"tags" : [ "Music" ],
+	"title" : "LX Music桌面歌词",
+	"type" : "Web",
+	"version" : 3,
+	"visibility" : "public",
+	"workshopid" : "3805744669",
+	"workshopurl" : "steam://url/CommunityFilePage/3805744669"
 }

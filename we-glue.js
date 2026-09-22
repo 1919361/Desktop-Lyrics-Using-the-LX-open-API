@@ -404,6 +404,102 @@
         faceOn = true;
     }
 
+    /* ========================================================================
+     *  运行时字体扫描 —— 每次壁纸启动都会跑一遍，用户永远不需要手动扫描
+     * ======================================================================
+     *  网页拿不到系统字体清单（queryLocalFonts 需要"用户手势"授权，
+     *  壁纸自动启动时没有），所以用经典测量法：同一串文字分别用
+     *  「候选字体 + monospace」和纯 monospace 画到 canvas 上量宽度，
+     *  宽度不一样 = 候选字体真的装了（它画出了不同的字形）。
+     *  几十个候选一次只需几毫秒，结果缓存在本次运行内。
+     *
+     *  排序规则（用户指定）：**按是否支持中文排序** —— 支持中文的排前面。
+     *  判定：用一串中文字去量，宽度与基线不同 = 这个字体画得出不同的
+     *  汉字字形 = 支持中文；宽度相同 = 中文是回退到 monospace 画的 = 不支持。
+     *  「自动」模式取排序后的第一个（即系统里检测到的第一个中文字体）；
+     *  一个中文字体都没有才退回页面原字体。
+     *  局限：测量法只能测"已知名字"的候选池 —— 池外的字体检测不到，
+     *  但「自定义字体名」文本框可以填任意字体名，不受此限。
+     * ====================================================================== */
+    var FONT_CANDIDATES = [
+        /* [字体族名, 是否支持中文]。中文支持是静态标注（构造池子时已知的事实）——
+           运行时用宽度量不出来：全角汉字在任何中文字体里的 advance 都恒等于字号，
+           "雅黑还是宋体"量宽度完全一样；Segoe UI 这类无中文字体的，中文又总是
+           回退到雅黑渲染，宽度同样相同。所以：运行时只检测「装没装」（拉丁字形
+           宽度差异），「支不支持中文」按标注来排序。 */
+        ['LXGW WenKai GB', 1], ['霞鹜文楷 GB', 1], ['LXGW WenKai', 1], ['霞鹜文楷', 1],
+        ['LXGW WenKai Mono', 1], ['霞鹜新晰黑', 1],
+        ['MiSans', 1], ['MiSans VF', 1], ['HarmonyOS Sans SC', 1], ['OPPO Sans', 1],
+        ['HONOR Sans', 1],
+        ['Source Han Sans CN', 1], ['思源黑体', 1], ['Source Han Sans SC', 1],
+        ['思源黑体 CN', 1], ['Source Han Serif CN', 1], ['思源宋体', 1],
+        ['Noto Sans CJK SC', 1], ['Noto Serif CJK SC', 1], ['Noto Sans SC', 1],
+        ['Sarasa Gothic SC', 1], ['更纱黑体', 1],
+        ['得意的黑', 1], ['得意黑', 1], ['Resource Han Rounded', 1], ['资源圆体', 1],
+        ['Yozai', 1], ['悠哉字体', 1],
+        ['Microsoft YaHei', 1], ['微软雅黑', 1], ['Microsoft YaHei UI', 1],
+        ['DengXian', 1], ['等线', 1], ['SimHei', 1], ['黑体', 1],
+        ['KaiTi', 1], ['楷体', 1], ['FangSong', 1], ['仿宋', 1],
+        ['SimSun', 1], ['中易宋体', 1],
+        ['STXihei', 1], ['华文细黑', 1], ['STKaiti', 1], ['华文楷体', 1],
+        ['STZhongsong', 1], ['华文中宋', 1], ['STFangsong', 1], ['华文仿宋', 1],
+        ['YouYuan', 1], ['幼圆', 1], ['LiSu', 1], ['隶书', 1],
+        ['STHupo', 1], ['华文琥珀', 1], ['STCaiyun', 1], ['华文彩云', 1],
+        ['STLiti', 1], ['华文隶书', 1],
+        ['Segoe UI', 0], ['Arial', 0]
+    ];
+    var detectedFonts = null;    /* null = 还没检测过（本次运行内缓存） */
+
+    function detectFonts() {
+        if (detectedFonts) return detectedFonts;
+        detectedFonts = [];
+        try {
+            var c = document.createElement('canvas');
+            var ctx = c.getContext('2d');
+            if (!ctx) return detectedFonts;
+            var latinProbe = 'mmmmmmmmllii WWL 0O';
+            ctx.font = '72px monospace';
+            var latinBase = ctx.measureText(latinProbe).width;
+            for (var i = 0; i < FONT_CANDIDATES.length; i++) {
+                var name = FONT_CANDIDATES[i][0], cjkFlag = FONT_CANDIDATES[i][1];
+                try {
+                    /* 「装没装」：拉丁字形宽度与 monospace 基线不同 = 这个字体真的
+                       在画（未安装时拉丁全部回退到 monospace，宽度与基线相同）。 */
+                    ctx.font = '72px "' + name + '", monospace';
+                    if (Math.abs(ctx.measureText(latinProbe).width - latinBase) > 1) {
+                        detectedFonts.push({ name: name, cjk: !!cjkFlag });
+                    }
+                } catch (e) { }
+            }
+            /* 按是否支持中文排序：中文优先（稳定排序，同组保持池内顺序） */
+            detectedFonts.sort(function (a, b) { return (b.cjk ? 1 : 0) - (a.cjk ? 1 : 0); });
+            var cjkN = detectedFonts.filter(function (f) { return f.cjk; }).length;
+            try {
+                console.log('[we-glue] 字体扫描：候选 ' + FONT_CANDIDATES.length +
+                    '，可用 ' + detectedFonts.length + '（其中支持中文 ' + cjkN +
+                    ' 个）→ ' + detectedFonts.slice(0, 10).map(function (f) {
+                        return f.name + (f.cjk ? '·中' : '');
+                    }).join(', ') + (detectedFonts.length > 10 ? ' …' : ''));
+            } catch (e) { }
+        } catch (e) { }
+        return detectedFonts;
+    }
+
+    /* 「自动」= 排序后的第一个：优先用系统里检测到的中文字体 */
+    function autoPickFont() {
+        var have = detectFonts();
+        return have.length ? have[0].name : '';
+    }
+
+    /* 排查出口：控制台里 window.__weFontsDebug() 可看扫描排序结果与最终字体栈 */
+    window.__weFontsDebug = function () {
+        var have = detectFonts();
+        return {
+            sorted: have.map(function (f) { return { name: f.name, cjk: f.cjk }; }),
+            auto: autoPickFont(), family: S.fontFamily, custom: S.fontCustom
+        };
+    };
+
     /* 算出最终的 font-family 栈；返回空串 = 不改变字体 */
     function fontStack() {
         var head = '';
@@ -413,7 +509,12 @@
             head = custom.indexOf(',') >= 0
                 ? custom.split(',').map(quoteFamily).filter(Boolean).join(', ')
                 : quoteFamily(custom);
-        } else if (S.fontFamily && S.fontFamily !== 'system') {
+        } else if (S.fontFamily === 'system') {
+            /* 「自动」：每次启动检测系统字体，按偏好顺序用第一个可用的。
+               一个都没检测到（极端环境）才退回页面原字体。 */
+            var auto = autoPickFont();
+            if (auto) head = quoteFamily(auto);
+        } else if (S.fontFamily) {
             head = quoteFamily(S.fontFamily);
         }
         var parts = [];
@@ -422,6 +523,35 @@
         if (!parts.length) return '';
         parts.push(FONT_TAIL);
         return parts.join(', ');
+    }
+
+    /* 切换「水平对齐」的过渡动画（FLIP）：
+       align-items / justify-content 是离散属性，直接切换 = 整面歌词瞬间平移。
+       这里在写新变量**前**量一次每行的屏幕位置，新布局生效后再量一次，
+       把差值用一次性 WAAPI 动画滑回去 —— composite:'add' 叠加在行自身的
+       transform（当前行的缩放）之上，互不破坏。滑动 ~0.48s，跟手不拖沓。 */
+    var lastAlign = null;
+    function flipAlignRows(oldLefts) {
+        if (!oldLefts || !document.getElementById('lyricList')) return;
+        requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+                var list = document.getElementById('lyricList');
+                if (!list) return;
+                var rows = list.querySelectorAll('.lyric-line');
+                for (var i = 0; i < rows.length; i++) {
+                    var el = rows[i];
+                    if (oldLefts[i] == null) continue;
+                    var dx = el.getBoundingClientRect().left - oldLefts[i];
+                    if (Math.abs(dx) < 2) continue;
+                    try {
+                        el.animate(
+                            [{ transform: 'translateX(' + (-dx).toFixed(1) + 'px)' },
+                             { transform: 'translateX(0px)' }],
+                            { duration: 480, easing: 'cubic-bezier(0.22, 1, 0.32, 1)', composite: 'add' });
+                    } catch (e) { }
+                }
+            });
+        });
     }
 
     function apply() {
@@ -454,11 +584,43 @@
         setVar('--we-lyric-scale', String(S.lyricScale));
         setVar('--we-active-scale', String(S.activeScale));
         setVar('--we-dim-k', String(S.dimK));
-        var pos = S.align === 'left' ? ['flex-start', 'left']
-                : S.align === 'right' ? ['flex-end', 'right']
-                : ['center', 'center'];
-        setVar('--we-lyric-align', pos[0]);
-        setVar('--we-text-align', pos[1]);
+        /* 水平对齐要一路贯穿到 6 个消费点，缺一个就是"对齐了但没对齐干净"：
+           list   —— 行盒子在列表里的横向位置（align-items）
+           text   —— text-align（行内普通文本，如等待点兜底）
+           main   —— 逐字排布层 .lyric-main 的 justify-content（页面写死了 center，
+                     长句换行后的短行全都居中 —— 左/右对齐"对不齐"的主因就是它）
+           origin —— 当前行放大的 transform-origin（缩放要往对齐边反方向长，
+                     左对齐时从中心放大就会把左半推出屏幕）
+           gap    —— 间奏点在盒子内的锚边（左对齐钉左、右对齐钉右）
+           items  —— 行内子元素（主歌词/翻译）的横向对齐（翻译要贴对齐边） */
+        /* 对齐真变了才做 FLIP 过渡（首次加载 / 其它属性变化不触发） */
+        var oldLefts = null;
+        var _list = document.getElementById('lyricList');
+        if (lastAlign !== null && lastAlign !== S.align &&
+            _list && _list.children.length) {
+            oldLefts = [];
+            var _rows = _list.querySelectorAll('.lyric-line');
+            for (var _i = 0; _i < _rows.length; _i++) {
+                oldLefts.push(_rows[_i].getBoundingClientRect().left);
+            }
+        }
+        lastAlign = S.align;
+
+        var A = S.align === 'left' ? { list: 'flex-start', text: 'left', main: 'flex-start', origin: '0% 50%', gap: 'flex-start', items: 'flex-start', gbox: '0% 50%', ginner: 'calc(18px + 0.71em) 50%' }
+              : S.align === 'right' ? { list: 'flex-end', text: 'right', main: 'flex-end', origin: '100% 50%', gap: 'flex-end', items: 'flex-end', gbox: '100% 50%', ginner: 'calc(100% - 18px - 0.71em) 50%' }
+              : { list: 'center', text: 'center', main: 'center', origin: '50% 50%', gap: 'flex-start', items: 'flex-start', gbox: '0% 50%', ginner: 'calc(18px + 0.71em) 50%' };
+        setVar('--we-lyric-align', A.list);
+        setVar('--we-text-align', A.text);
+        setVar('--we-justify', A.main);
+        setVar('--we-line-origin', A.origin);
+        setVar('--we-gap-anchor', A.gap);
+        setVar('--we-line-items', A.items);
+        /* 等待点的两个缩放原点也跟锚边走：盒子的展开放大（scale 1.55）和
+           内层呼吸（scale）如果永远从左缘长，右对齐时点在右缘，
+           每一次呼吸/开合都会被甩出几十像素 —— 就是"左右乱飘"。 */
+        setVar('--we-gap-box-origin', A.gbox);
+        setVar('--we-gap-inner-origin', A.ginner);
+        if (oldLefts) flipAlignRows(oldLefts);
         if (S.padX === null) root.style.removeProperty('--we-pad-x');
         else setVar('--we-pad-x', S.padX + '%');
         if (S.lineHeight === null) root.style.removeProperty('--we-lh');
@@ -519,6 +681,9 @@
         setVar('--we-glass-sat-chip', (S.glassSat * (1.6 / 1.85)).toFixed(4));
         /* 胶囊的「离开就淡下去」同样比玻璃本体深一档（原值 0.5 相对 0.42）。 */
         setVar('--we-dim-op-chip', (S.dimOp * (0.5 / 0.42)).toFixed(4));
+        /* 玻璃的饱和/亮度现在烘在 SVG 滤镜原语里（折射接管了 backdrop-filter 链），
+           变量变了要通知 attachLiquidGlass 重建滤镜参数。 */
+        try { window.dispatchEvent(new Event('we-glass-params')); } catch (e) { }
 
         /* ---- 开关类 ---- */
         var cl = root.classList;

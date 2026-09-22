@@ -2192,6 +2192,21 @@
                （applyLyric 自己的定位调用在解除标志之后发出，不受影响）。 */
             let lyricSwitching = false;
 
+            /* 冻结的"另一半"：光拦住**新的**滚动还不够 —— 已经在飞的滚动也必须
+               立刻停下，否则旧列表会在淡出开始前/途中继续翻动：
+                 · 上一句换行的滑动动画（WAAPI，最长 780ms）还在跑；
+                 · 等待点的跟随循环（gapFollow）每帧都在写 scrollTop。
+               LX Music 客户端里手动切歌时最明显：那一刻滚动大概率正在飞，
+               用户看到"歌词往上翻动的过程，然后才是渐隐"——就是这个。
+               （自动切歌发生在间奏、滚动早已静止；控件切歌后紧跟 settle——
+                 所以那两条路径此前看不出问题。）
+               settleScroll 是"零跳变"结算：把当前视觉位置写回真实 scrollTop
+               并撤掉位移，画面瞬间静止但不闪。 */
+            function freezeScrollNow() {
+                gapFollowStop();
+                if (scrollAnim) settleScroll();
+            }
+
             function scrollToIndex(index, immediate = false) {
                 if (lyricSwitching) return;          // 换歌过渡期：旧列表不许再被滚动
                 if (!lyricScrollEl || index < 0 || index >= lyricLineElements.length) return;
@@ -2333,6 +2348,19 @@
             }
 
             // 只改"真正变了"的那几行（原来每换一行要重写全部行，几十上百次 class 操作）
+            /* 当前行放大的"溢出保护"：一行放大后若比可用宽度还宽，就把这一行的
+               实际缩放压到刚好放得下（Apple Music 对超长句的做法——长句少放大）。
+               --line-fit 按行写进行内样式，CSS 端取 min(用户倍率, 行内 fit)。
+               offsetWidth 读的是布局宽度，不受 transform 缩放影响，可以放心量；
+               必须在挂上 active class 之后量（active 行字重 700 会改变宽度）。 */
+            function applyLineFit(el) {
+                if (!el || !lyricListEl) return;
+                const w = el.offsetWidth;
+                if (w <= 0) return;
+                const fit = Math.max(1, lyricListEl.clientWidth / w);
+                el.style.setProperty('--line-fit', fit.toFixed(3));
+            }
+
             function updateLineClasses(activeIndex) {
                 const n = lyricLineElements.length;
                 for (let i = 0; i < n; i++) {
@@ -2343,6 +2371,7 @@
                         const prev = lineClassCache[i];
                         if (prev) el.classList.remove(LINE_CLASS[prev]);
                         if (want) el.classList.add(LINE_CLASS[want]);
+                        if (want === 2 && prev !== 2) applyLineFit(el);
                     }
                     lineClassCache[i] = want;
                 }
@@ -2372,6 +2401,18 @@
                         wrap.style.maxHeight = '0px';
                     }
                 }
+            }
+
+            /* 窗口尺寸 / 字号倍率 / 左右留白变化后，当前行的 --line-fit 会过期，
+               重新量一次（we-glue 在属性变化后会派发 resize，正好走到这里）。 */
+            function refreshActiveLineFit() {
+                if (!lyricListEl) return;
+                const el = lyricListEl.querySelector('.lyric-line.active');
+                if (el) applyLineFit(el);
+            }
+            window.addEventListener('resize', refreshActiveLineFit);
+            if (document.fonts && document.fonts.ready) {
+                document.fonts.ready.then(() => refreshActiveLineFit()).catch(() => { });
             }
 
             // 长歌词的自动缩字号：保证「当前句放大（scale 2）」后仍留在屏幕内。
@@ -2476,24 +2517,50 @@
                 el.style.transform = '';
             }
 
-            // 等待点的水平落点：**固定不动**。
-            // 早先的做法是"对齐歌词的左边界"，参考宽度取的是"这首歌里最长的一行"
-            // —— 于是歌词长一点/短一点，点的位置就跟着左右漂（用户反馈：歌词长就
-            // 靠左、歌词短就靠右），换一首歌还会再整体挪一次。
-            // 现在完全不看歌词：只按容器宽度取一个恒定的偏移（容器中心再往左 24%），
-            // 任何歌曲、任何一句都落在同一个位置。
+            // 等待点的水平落点（居中模式）：按「歌词的平均宽度」定位。
+            // 历史版本 1：对齐最长一行的左缘 —— 歌词长一点/短一点，点就跟着漂
+            //（用户反馈：歌词长就靠左、歌词短就靠右），换一首歌还会再整体挪一次。
+            // 历史版本 2：容器中心 − 固定 24% —— 恒定，但和歌词实际位置无关，
+            // 容易落在离歌词较远的地方。
+            // 现在：容器中心往左「半个平均行宽」= 平均宽度歌词块的左缘 ——
+            // 平均值对一首歌是常数，落点依旧恒定不漂；又不会被一句超长行
+            // 拽得离歌词整体太远（用户反馈：按最长算受单一变量影响太大）。
             const GAP_INNER_PAD = 18;      // 必须与 .gap-inner 的横向 padding 一致
-            const GAP_LEFT_RATIO = 0.24;   // 点左缘 = 容器中心 − 容器宽 × 该值
 
             function updateGapWidth() {
                 if (!lyricListEl || !gapLineIndices.length) return;
                 const listW = lyricListEl.clientWidth;
                 if (listW <= 0) return;
 
+                /* 水平对齐（WE 面板的「水平对齐」，we-glue 写在 --we-lyric-align）：
+                   左/右对齐时盒子直接铺满整行，三个点由 --we-gap-anchor 钉在相应边缘
+                   —— 与歌词的对齐边保持一致；居中走下面的平均行宽落位。 */
+                let alignMode = 'center';
+                try {
+                    const v = getComputedStyle(document.documentElement)
+                        .getPropertyValue('--we-lyric-align').trim();
+                    if (v === 'flex-start') alignMode = 'left';
+                    else if (v === 'flex-end') alignMode = 'right';
+                } catch (e) { }
+                if (alignMode !== 'center') {
+                    lyricListEl.style.setProperty('--gap-w', listW.toFixed(1) + 'px');
+                    return;
+                }
+
                 const center = listW / 2;
-                // 第一个点的目标左缘：容器中心左侧一个固定比例处；
+                // 平均行宽：量所有真实歌词行（跳过等待点行自身）的布局宽度。
+                // offsetWidth 不受 transform 缩放影响，当前行放大中也能量准。
+                let total = 0, cnt = 0;
+                for (let i = 0; i < lyricLineElements.length; i++) {
+                    const el = lyricLineElements[i];
+                    if (!el || !el.classList || el.classList.contains('gap-line')) continue;
+                    const w = el.offsetWidth;
+                    if (w > 0) { total += w; cnt++; }
+                }
+                const avgW = cnt ? total / cnt : listW * 0.5;
+                // 第一个点的目标左缘 = 平均宽度歌词块的左缘；
                 // 不越出容器左内边、也不越过中线（窄屏兜底）
-                let dotsLeft = center - listW * GAP_LEFT_RATIO;
+                let dotsLeft = center - avgW / 2;
                 dotsLeft = Math.max(GAP_INNER_PAD, Math.min(dotsLeft, center - 24));
 
                 // 盒子居中 → 盒子左缘 = 点左缘 − 内层左内边距；再反推宽度
@@ -3752,6 +3819,7 @@
             async function applyLyric(lrcText, tlyricText) {
                 const mySeq = ++applyLyricSeq;
                 lyricSwitching = true;                 // 冻结程序化滚动（见 scrollToIndex 顶部说明）
+                freezeScrollNow();                     // 停掉在飞的滚动动画/跟随循环（淡出即静止）
 
                 // ---- ① 淡出旧列表（首载时没有旧内容，跳过）----
                 if (lyricLineElements.length && lyricListEl.children.length) {
@@ -3981,6 +4049,7 @@
                         /* 轮询路径的切歌入口：同样第一时间冻结滚动（见 SSE name 事件处）。
                            并像 SSE 一样调度歌词刷新 —— 否则冻结标志没人解除。 */
                         lyricSwitching = true;
+                        freezeScrollNow();
                         currentSongName = data.name;
                         trackNameEl.textContent = data.name;
                         resetClock();
@@ -4080,6 +4149,7 @@
                            网络延迟窗口里，状态轮询会带着新进度调高亮/滚动，
                            旧列表会在渐隐途中被滚走（"从某一处回到顶部"的残影）。 */
                         lyricSwitching = true;
+                        freezeScrollNow();     // 停掉在飞的滚动动画/跟随循环（淡出即静止）
                         currentSongName = name;
                         trackNameEl.textContent = name || '—';
                         resetClock();          // 新歌：进度归零，等权威进度再起跑
@@ -4625,6 +4695,7 @@
                 const el = document.getElementById('playerDock');
                 if (!el) return;
                 let svgId = null, canvas = null, ctx = null, feImage = null, feDisp = null, filterEl = null;
+                let feSat = null, feTrans = null, feFuncR = null, feFuncG = null, feFuncB = null;
                 let ro = null, roTimer = 0;
 
                 function smoothStep(a, b, t) {
@@ -4659,8 +4730,29 @@
                     feDisp.setAttribute('in2', 'map');
                     feDisp.setAttribute('xChannelSelector', 'R');
                     feDisp.setAttribute('yChannelSelector', 'G');
+                    feDisp.setAttribute('result', 'disp');
+                    /* 折射完再做饱和/提亮 —— 玻璃"透出的色彩被活化"，正是液态玻璃
+                       与普通透明玻璃的观感差别。参数吃 WE 面板的两个滑条
+                       （--we-glass-sat / --we-glass-bright，rebuild 时写入）。 */
+                    feSat = document.createElementNS(NS, 'feColorMatrix');
+                    feSat.setAttribute('in', 'disp');
+                    feSat.setAttribute('type', 'saturate');
+                    feSat.setAttribute('result', 'sat');
+                    feTrans = document.createElementNS(NS, 'feComponentTransfer');
+                    feTrans.setAttribute('in', 'sat');
+                    feFuncR = document.createElementNS(NS, 'feFuncR');
+                    feFuncG = document.createElementNS(NS, 'feFuncG');
+                    feFuncB = document.createElementNS(NS, 'feFuncB');
+                    [feFuncR, feFuncG, feFuncB].forEach(function (f) {
+                        f.setAttribute('type', 'linear');
+                        f.setAttribute('slope', '1.06');
+                        f.setAttribute('intercept', '0');
+                        feTrans.appendChild(f);
+                    });
                     filterEl.appendChild(feImage);
                     filterEl.appendChild(feDisp);
+                    filterEl.appendChild(feSat);
+                    filterEl.appendChild(feTrans);
                     defs.appendChild(filterEl);
                     svg.appendChild(defs);
                     document.body.appendChild(svg);
@@ -4725,6 +4817,20 @@
                     feImage.setAttributeNS('http://www.w3.org/1999/xlink', 'href', canvas.toDataURL());
                     feDisp.setAttribute('scale', String(maxScale));
 
+                    /* 饱和/亮度：从根元素的 CSS 变量读（we-glue 的属性面板在写）。
+                       这两个滑条曾经只活在 backdrop-filter 链里，折射接管后失效过；
+                       现在烘进滤镜原语，「玻璃透出的饱和度 / 亮度」重新生效。 */
+                    try {
+                        const rootCs = getComputedStyle(document.documentElement);
+                        const sat = parseFloat(rootCs.getPropertyValue('--we-glass-sat'));
+                        const bright = parseFloat(rootCs.getPropertyValue('--we-glass-bright'));
+                        feSat.setAttribute('values', String(isFinite(sat) && sat > 0 ? sat : 1.9));
+                        const slope = String(isFinite(bright) && bright > 0 ? bright : 1.06);
+                        feFuncR.setAttribute('slope', slope);
+                        feFuncG.setAttribute('slope', slope);
+                        feFuncB.setAttribute('slope', slope);
+                    } catch (e) { }
+
                     /* 行内声明：**只有 url() 一条** —— 液态玻璃（位移折射），无 blur。
                        ① 悬停/移出**永远是这一条**，不做任何切换（之前 idle 切纯 blur
                           的方案已按需求删除 —— 两种效果来回切非常割裂）；
@@ -4744,6 +4850,9 @@
                 }
 
                 rebuild();
+                /* 属性面板改了玻璃的饱和/亮度 → we-glue 派发事件 → 重建滤镜参数
+                   （贴图不用重画，但 rebuild 里顺带刷新，代价可忽略） */
+                window.addEventListener('we-glass-params', scheduleRebuild);
                 if (window.ResizeObserver) {
                     ro = new ResizeObserver(scheduleRebuild);
                     ro.observe(el);

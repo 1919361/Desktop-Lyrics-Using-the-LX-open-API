@@ -95,9 +95,46 @@ html body .lyric-line {
 }
 
 html body .lyric-line.active {
-    transform: scale(var(--we-active-scale, 2));
+    /* 当前行的实际缩放 = min(用户倍率, --line-fit 溢出保护)。
+       --line-fit 由页面在行变成当前行时按行写入（可用宽度 ÷ 该行布局宽度）——
+       长句放大后不再溢出屏幕；min() 里任何一边缺省都有安全兜底。 */
+    transform: scale(min(var(--we-active-scale, 2), var(--line-fit, 10)));
+    /* 缩放原点跟对齐走：左对齐钉左缘（往右长）、右对齐钉右缘、居中从中心长。
+       原点写死居中时，左/右对齐的行放大会把一半推出屏幕（用户报的溢出）。 */
+    transform-origin: var(--we-line-origin, 50% 50%);
     filter: blur(0);
     opacity: 1;
+}
+
+/* 带翻译的当前行：页面对这条写死了 translateY(0.51em) scale(2) ——
+   补偿量是按 2 倍调的，且它优先级更高，把「当前行放大倍率」整个压死了
+   （绝大多数歌词都带翻译 = 滑条完全无效）。这里用更高优先级把两段都接上属性：
+   缩放吃倍率与溢出保护；平移补偿按 (实际倍率 − 1) 线性缩放 ——
+   倍率 2 时正好等于 0.51em（与页面值一致），1.2~4 全程成立，1 时归零。
+   translate 仍在 scale 之前 = 位移不被缩放放大（与页面规则一致）。 */
+html body .lyric-line.has-trans.active {
+    transform:
+        translateY(calc(0.51em * (min(var(--we-active-scale, 2), var(--line-fit, 10)) - 1)))
+        scale(min(var(--we-active-scale, 2), var(--line-fit, 10)));
+    transform-origin: var(--we-line-origin, 50% 50%);
+}
+
+/* 水平对齐的另外三个消费点（页面里都写死了居中，属性面板调了对不齐）：
+   ① 逐字排布层 .lyric-main 的 justify-content —— 长句换行后的短行全靠它对齐；
+   ② 行内子元素（主歌词/翻译）的横向对齐 —— 翻译要贴着对齐边；
+   ③ 间奏点在盒子内的锚边 —— 左对齐钉左、右对齐钉右（居中保持 JS 落位）。 */
+html body .lyric-main { justify-content: var(--we-justify, center); }
+html body .lyric-line { align-items: var(--we-line-items, flex-start); }
+/* ③ 间奏点在盒子内的锚边 —— 左对齐钉左、右对齐钉右（居中保持 JS 落位）。
+     同时把内外两层的缩放原点也跟锚边走：盒子的展开放大（scale 1.55）和
+     内层呼吸（gapBreath 的 scale）都写死了从左缘长 —— 右对齐时点在右缘，
+     每次呼吸/开合都会被甩出几十像素（"左右乱飘"的根源）。 */
+html body .gap-inner {
+    justify-content: var(--we-gap-anchor, flex-start);
+    transform-origin: var(--we-gap-inner-origin, calc(18px + 0.71em) 50%);
+}
+html body .lyric-line.gap-line {
+    transform-origin: var(--we-gap-box-origin, 0 50%);
 }
 
 /* 已唱过 / 即将唱的两行：共用一个「非当前行存在感」系数，默认值即原值 */

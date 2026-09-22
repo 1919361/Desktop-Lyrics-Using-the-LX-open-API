@@ -20,6 +20,22 @@
  */
 'use strict';
 
+/* ========================================================================
+ *  ⚠ 此脚本已停用（2026-09-22，工作流迁移）⚠
+ *
+ *  本目录（…\myprojects\index）现在就是 Wallpaper Engine 的工程本体：
+ *  所有修改直接改这里的文件，改完在引擎里「重新载入」即可，没有安装步骤。
+ *
+ *  这个脚本的行为是"清空目标目录再整包复制"——误跑会克隆出第二个工程
+ *  （两个目录带着同一个 workshopid，创意工坊的更新对象就会出乱子），
+ *  所以默认直接拒绝执行。真要恢复旧的两步安装流程，加 --i-am-sure。
+ * ======================================================================== */
+if (!process.argv.includes('--i-am-sure')) {
+    console.error('✖ install-to-we.js 已停用：本目录就是 WE 工程本体，直接修改这里的文件即可。');
+    console.error('  （确实要恢复旧的两步安装流程：node install-to-we.js --i-am-sure）');
+    process.exit(1);
+}
+
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
