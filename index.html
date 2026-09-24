@@ -856,15 +856,20 @@
            ① 平时完全不出现、且不占位置：等待点行高度就是 0，
               所以它上下的两句歌词是「紧挨着」的（不是留一个空洞）。
            ② 进入等待区间时才展开：上下两句歌词平滑地让开，三个点
-              在让开的空隙里浮现；等待一结束就重新合拢、随之隐藏。
+              在让开的空隙里**渐显**浮现（约 2s）；等待一结束就重新合拢、随之隐藏。
            ③ 靠"歌词的左边界"，而不是容器（≈屏幕）的左边界：行宽由
               --gap-w 给（JS 量出最长歌词行的宽度算出来的），行居中排布，
               三个点再靠这条盒子的左缘 —— 大屏上歌词是居中的，
               贴容器左缘会离歌词十万八千里。
               从左侧长大（transform-origin: 0 50%），缩放不会把左半推出去。
-           ④ 三个点「一个接一个」点亮 —— 离散切换，不做圆点内部的扫光。
+           ④ 三个点「一个接一个」点亮 —— 每颗点是**整颗一起**由暗渐变到明
+              （无方向性，不是从左往右扫），亮完自然过渡到下一颗。
            ⑤ 等待期间三个点作为一个整体一起呼吸：幅度小、周期长（参考
               Apple Music 的间奏省略号，是"若有若无的心跳"，不是跳动）。
+           ⑥ 间奏快结束时三个点缓动涨大（1.2 倍）作提醒，涨到位后保持一小段；
+              最后 0.1s 缩小 + 渐隐收掉，紧接着整行合拢、下一句顺势升上来。
+           ⑦ 进入间奏时三个点是**渐显**出现的（约 2s），而不是"啪"地一下冒出来；
+              间距为 0.1733em（第 50 轮起，= 原 0.26em 的 2/3）。
 
            展开/合拢的做法：外层直接过渡 height 0 ↔ 0.95em（纯长度，插值
            在所有浏览器上都成立），内层 height:100% + overflow:hidden 负责裁切。
@@ -915,62 +920,315 @@
                 visibility 0s linear 0s;
         }
 
-        /* 裁切层：高度跟着外层走，0 高时三个点被完全裁掉。
+        /* 裁切层 + 放大量层：高度跟着外层走，0 高时三个点被完全裁掉。
+           ★ 它现在承担两件事：① 裁切（overflow:hidden）② 承载放大量
+             （--gap-zoom 的 transition）。呼吸波形交给里面的 .gap-breath，
+             两层分开挂 transform，否则动画会把 transition 挤掉（见下）。
            注意这里不能加垂直 padding（见上）。 */
         .gap-inner {
-            display: flex;
-            align-items: center;
-            justify-content: flex-start;
-            gap: 0.26em;                            /* 与圆点直径按比例收，保持"一个紧凑省略号"的观感 */
+            display: block;
             height: 100%;
             min-height: 0;
             overflow: hidden;
-            /* 横向留出呼吸放大的余量。注意这里只有横向 padding —— 纵向
+            /* 横向留出放大（2 倍）的余量。注意这里只有横向 padding —— 纵向
                内边距不可压缩，会把折叠态撑住（见上）。 */
             padding: 0 18px;
-            /* 呼吸的缩放锚点 = 「三个点这个小团」的水平中心，而不是左缘。
+            /* 缩放锚点 = 「三个点这个小团」的水平中心，而不是左缘。
                锚在左缘时：最左那个点钉死不动、整团向右顶出去，看着像被
                从左边拽着长，很别扭；锚在团心则是左右对称地一起鼓起来。
-               团宽 = 3 × 0.3em + 2 × 0.26em = 1.42em，半宽 0.71em；
-               再加左内边距 18px 得到团心。用 em/calc 写，字号换挡时自动跟着走。
+               ★ 第 50 轮：点团间距缩短到原来的 2/3（0.26em → 0.1733em），
+                 团宽随之变小，锚点**必须同步重算** —— 否则缩放中心会落到
+                 真正团心右侧约 3px 处，呼吸/放大时整团轻微左右甩。
+                 新团宽 = 3 × 0.3em + 2 × 0.1733em = 1.2467em，半宽 0.6233em；
+                 再加左内边距 18px 得到团心。
+                 （"锚点 = 团心"是一条不变式：只要点径或间距动，这里就得跟着动。）
+               用 em/calc 写，字号换挡时自动跟着走。
                （注意不能写成 50%：那是这行 579px 宽盒子的中心，
                  而三个点是靠左放的，绕盒子中心缩放会让整团左右平移几十像素。） */
-            transform-origin: calc(18px + 0.71em) 50%;
+            transform-origin: calc(18px + 0.6233em) 50%;
+            /* ★ 第 51 轮：节距取整后团心随之变化 —— 半宽 = 0.15em（半个点）
+               + 1 个节距。同步写成同款"优先值 + 兜底"两行（round() 不支持时
+               本条在解析期整体被丢弃，回落第一行）。 */
+            transform-origin: calc(18px + 0.15em + round(nearest, 0.4733em, 1px)) 50%;
         }
 
         .gap-dot {
             display: block;
             flex: 0 0 auto;
+            /* 让 ::after（圆本体）以点为锚定盒 */
+            position: relative;
             width: 0.3em;
             height: 0.3em;
             border-radius: 50%;
-            background-color: rgba(255, 255, 255, 0.26);
-            /* 不加光晕：三个点挨得近，各自的阴影会在外面叠成一圈雾，
-               把整组包起来（看着像发光的胶囊）。纯色圆点更干净。 */
-            box-shadow: none;
-            transition: background-color 0.32s cubic-bezier(0.16, 1, 0.3, 1),
-                        box-shadow 0.32s cubic-bezier(0.16, 1, 0.3, 1),
-                        transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+            /* ★★ 第 49 轮：圆**不能**由盒子宽高决定，必须用「显式半径」画。
+               量化过的病因：点的布局盒是 0.3em 正方形，但 0.3em = 10.5469px，
+               再乘上外层 scale(1.55) 与呼吸 1→1.12，落到设备像素上永远是分数；
+               Chromium 会把绘制矩形**逐轴吸附**成整数 —— 实测量到三颗点分别吸成
+               18×19 / 17×19 / 18×19（x 的小数部分 .353 / .096 / .838 各不相同）。
+               于是 `border-radius: 50%` 在"宽高不等"的盒子上画出来的是**椭圆**：
+               中间那颗二阶矩轴比 1.0867（比宽高 8.7%），放大看就是"两侧被切平"。
+               改法：填充色挪到 `color`（color 天生可继承），再用伪元素在**2 倍大的
+               盒子**里画一个**显式半径**的圆 —— 形状只由半径决定，与盒子被吸成
+               几乘几无关；伪元素比点大一圈，所以圆也不会被盒边裁掉。
+               实测轴比 1.0867 → 1.0067，与左右两颗一致（尺寸/位置/间距全未变）。
+               ⚠ 绝不把 `var(--lit)` 直接写进伪元素：`--lit` 注册时是
+                 `inherits: false`，伪元素读不到（回落成 initial 0，点会变成
+                 一团暗蓝）。必须借 `color` 这个天生继承的通道传值。 */
+            --lit: 0;
+            /* ★ 整颗一起渐变点亮（**无方向性**）：
+               点没有"左边先亮/右边后亮"，而是整颗圆的亮度同时从暗到明。
+               做法是不用 background-image 做位置扫光，而是让填充色的 alpha
+               跟着 --lit 走 —— --lit 是逐帧由 JS 写进来的数（0→1），于是整颗点
+               每一帧都换成一个"更亮一档"的纯色，读起来就是整整齐齐地亮起来。
+               色彩通道恒为 255（纯白），只变 alpha：85（0.26）→ 250（0.98）。
+               ★ 这里刻意**不挂 transition**：--lit 每帧都在更新，
+                 再叠 transition 会与逐帧值打架（拖尾/滞后）。
+               ★ 辉光也跟着 --lit 一起长：暗的时候完全没有光晕，
+                 越亮光晕越明显，收尾时正好是"亮起来了"的观感。
+                 辉光仍挂在点自己身上（border-radius 让它呈圆形），它不参与形状。 */
+            color: rgba(255, 255, 255, calc(0.26 + var(--lit) * 0.72));
+            background-color: transparent;
+            box-shadow: 0 0 calc(var(--lit) * 5px) rgba(150, 200, 255, calc(var(--lit) * 0.18));
         }
-        /* 一次点亮一个点：整颗圆点由暗转亮，而不是内部扫过去。
-           点亮态也只留一丝极弱的辉光（半径 5px / 透明度 0.18）——
-           在暗底上让"亮起来的点"像在发光，而不是死白一片。 */
+        /* 圆本体：定位到 2 倍大、居中，用**显式半径 0.15em**（直径 0.3em = 点的大小）。
+           ⚠⚠ 过渡带**必须留够宽**（这里是半径的 10%，≈0.9px）：radial-gradient 的边缘
+              **不享受覆盖率抗锯齿**，它按像素中心取色 —— 把过渡带写成 2%（0.36px）时
+              像素非全中即全外，边缘会变成肉眼可见的**硬台阶/锯齿**（第 49 轮真的踩了，
+              用户反馈"三个圆锯齿好严重"）。留 ~1px 的渐变带后，每像素都能拿到中间档
+              alpha，效果等同于抗锯齿。
+              实测（360 条射线的 50% 过界半径标准差，越小越平滑）：
+                border-radius 原版            sd≈0.077px
+                radial 2%（太窄）             sd≈0.185px  ← 锯齿
+                radial 10%（本条）            sd≈0.060px  ← 比原版还平滑
+                radial 16%                    sd≈0.050px 但边缘偏软（过渡宽 1.9px）
+              **显式半径**则保证形状只由半径决定，与盒子被吸附成几乘几无关。 */
+        .gap-dot::after {
+            content: '';
+            position: absolute;
+            left: -50%;
+            top: -50%;
+            width: 200%;
+            height: 200%;
+            background-image: radial-gradient(circle 0.15em at 50% 50%,
+                currentColor 90%, rgba(255, 255, 255, 0) 100%);
+        }
+        /* 点亮完成的点：--lit 已是 1，上面的 color/辉光自然给出纯亮版本；
+           这条只作"显式声明终态"的兜底（也方便探针用 .lit 判断状态）。
+           ⚠ 这里**绝不能再写 background-color** —— 那等于在圆后面又补一层
+             "盒子形状"的填充，在非正方盒上就是那个被吸附出来的椭圆，
+             会把刚修好的问题原样加回来。 */
         .gap-dot.lit {
-            background-color: rgba(255, 255, 255, 0.98);
             box-shadow: 0 0 5px rgba(150, 200, 255, 0.18);
         }
 
         /* 呼吸：三个点作为「一个整体」一起起伏（不再各点错相位）。
            动画加在裁切层上 → 三个点连同间距一起缩放，是同一个心跳；
            加在单个点上就会各自缩放、还被各自的 transition 干扰。
-           幅度/周期参考 Apple Music 的间奏点：1 → 1.12、3.6s 一个来回，
-           是"很轻的一口气"，不是弹跳。 */
+           幅度/周期参考 Apple Music 的间奏点：1 → 1.12、5s 一个来回，
+           是"很轻的一口气"，不是弹跳。
+           ★ 基线的 1 由外层 .gap-inner 的 --gap-zoom 提供（见下方"收尾提醒"），
+             内层只加这口气，两层**相乘**叠加：
+             常态 1→1.12，涨大态 1.2→1.344。
+           ★ 波形挂在内层 .gap-breath 上：折叠态（外层 height:0）不该呼吸，
+             而内层只有在展开后才有可见高度，天然满足"只在展开时起搏"。 */
+
+        /* ===== 收尾提醒：缓动放大 → 缩小渐隐 → 接下一句 =====
+           语义（第 48 轮定稿，三段式，全部发生在间奏最后 1s 内。
+           其中"提前 1s / 涨到 1.2 倍"是第 47 轮定的，"出口"这第三段是第 48 轮加的）：
+
+             剩余 1.0s ──► 0.3s   涨大：1 → 1.2 倍（0.7s，缓入缓出）
+             剩余 0.3s ──► 0.1s   保持：停在 1.2 倍（0.2s）
+             剩余 0.1s ──► 0.0s   出口：缩到 0.8 倍 + 淡出到 0（0.1s）
+             剩余 0.0s            行合拢（height 0.62s），下一句的入场同时开跑
+
+           ★ 为什么最后要留 0.1s 的「出口」（第 48 轮用户要求）：
+             若让点一直以 1.2 倍亮着、等行合拢时才缩回，就会看见"一个大圆
+             先瘪下去、再合拢"，中间那口气最像"卡住"。改成在最后 0.1s 先
+             **缩小 + 渐隐**，于是下一句开口那一帧点上已经什么都看不见了 ——
+             行再合拢时是"空行塌掉"，下一句顺势升上来，接得平稳。
+             ⚠ 0.1s 只有 ~6 帧，所以这条必须靠 transition（时长写在声明里），
+               不能用 keyframes；触发判定走 rAF 每帧的本地时钟（~16ms 粒度），
+               最多晚一帧（16ms），那点残留肉眼不可见。
+
+           ★ 为什么"缩回"不放在合拢那一刻（第 45 轮的老写法，现已降级为兜底）：
+             合拢与缩小若从同一帧起跑，会先看见一个大点瘪下去、再合拢。
+             第 48 轮起缩小提前到最后 0.1s 里做掉了，`.closing` 里那条
+             0.8→1 的过渡只在"不可见状态"下跑，留着防极短间奏/掉帧的兜底。
+
+           ★ 为什么用 --gap-zoom + transition 而不是 keyframes：
+             1.2 倍只要求"涨到位"，不需要自行跑完收回 —— keyframes 会在
+             间奏内部就跑完收回，等于"提醒完又泄气"。而 --gap-zoom 注册成
+             <number> 后才能平滑插值（未注册只会做 token 替换 → 瞬跳）。
+
+           ★ 曲线为什么选 `cubic-bezier(0.4,0,0.2,1)`（标准缓入缓出）：
+             0.6s 的工期配这条曲线时，两头都很轻、中段才走完大部分位移，
+             读起来是"慢慢涨起来"。刻意避开两类：带过冲的回弹曲线
+             （用户明确要"缓动流畅"，过冲会被看成"抖了一下"）、以及
+             起步很急的 easeOut 家族（第 48 轮用户反馈"结束放大"还是偏快）。
+
+           ★ 时长为什么是 0.7s（涨大）+ 0.2s（保持）：窗口总共只有 1s，
+             还要留出最后 0.1s 的出口，所以 0.7 + 0.2 + 0.1 = 1.0 正好排满。
+             保持段必须留得出来 —— 若把时间全花在长大上，点刚涨到位就被
+             收回，观感上等于没提醒。
+
+           ⚠⚠ 本注释块**必须**在这里闭合（第 46 轮踩过的致命一坑）：
+             这条注释一度忘了写闭合符，于是后面的 `@property --gap-zoom`
+             整块被"吞"进注释里 —— 变量根本没注册成 <number>，
+             `transition: --gap-zoom` 只做 token 替换 → 放大是**瞬跳**。
+             症状极具迷惑性：computed `transition` 声明一切正常、
+             `CSS.supports('--gap-zoom: 1.2')` 也返回 true、
+             `--gap-zoom` 也的确会变成 1.2 —— 就是**没有插值**。
+             判别方法（判据硬）：遍历 document.styleSheets 收集
+             `CSSPropertyRule`，看 `--gap-zoom` 在不在列表里；
+             或写入非法值 `el.style.setProperty('--gap-zoom','abc')`，
+             已注册成 <number> 时会被拒（读到 initial-value 或空），
+             未注册则原样读回 'abc'。
+
+           ⚠⚠⚠ 还有一个更阴的变种（第 46 轮实际就是栽在这个上）：
+             CSS 注释不认反引号，**注释正文里只要出现那个两字符的
+             闭合序列，注释当场就结束**，后面的注释文字会被当成 CSS
+             规则解析（非法），而 Chromium 的错误恢复会**一路跳到下一个
+             `}`** —— 正好把紧随其后的 `@property` 整块吃掉。
+             所以写这种"解释注释怎么写错"的注释时，**绝不能**把闭合
+             序列原样写进正文（本次就是它自己把 `@property` 吃掉了）。 */
+        @property --gap-zoom {
+            syntax: '<number>';
+            inherits: false;
+            initial-value: 1;
+        }
+        /* ★★ 关键结构：**呼吸与放大量必须挂在两个不同的元素上**。
+             若把 `animation: gapBreath` 和 `transition: --gap-zoom` 写在
+             同一个元素上，CSS 动画会**整体接管 transform** ——
+             `transform: scale(var(--gap-zoom))` 那条声明根本不参与计算，
+             `--gap-zoom` 的过渡也就白做（实测轨迹是"一步到底"的纯瞬跳）。
+             所以拆成两层，靠**嵌套相乘**合成：
+               .gap-inner           → 放大量（--gap-zoom，走 transition）
+                 └ .gap-breath      → 呼吸波形（走 keyframes）
+             外层既管裁切（height:100% + overflow:hidden）又管放大量，
+             内层只负责跳动。两层各改各的 transform，互不干扰。 */
+        .gap-inner {
+            --gap-zoom: 1;
+            transform: scale(var(--gap-zoom));
+            /* ★ 第 48 轮：0.6s → 0.7s，曲线由 easeOutCubic 换成标准缓入缓出
+               （用户要"结束放大再调缓一点、平滑一点"）。easeOut 起步太急；
+               缓入缓出两头都轻、中段才走完大部分位移，观感是"慢慢涨起来"。
+               ⚠ 这条 transition 是"涨大"和"兜底缩回"共用的默认值，
+                 `.gap-out` 出口会临时把它换成 0.1s（见下）。 */
+            transition: --gap-zoom 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+            /* 出口渐隐用（.gap-inner.gap-out 会把它压到 0）；平时恒为 1 */
+            opacity: 1;
+        }
+        /* 呼吸层：波形纯粹是"在 1 上加一口气"（0 → 0.12 → 0）。
+           放大基准由外层给，所以这里不需要知道 --gap-zoom ——
+           两层相乘：最终缩放 = --gap-zoom × (1 + 呼吸偏移)。 */
         @keyframes gapBreath {
             0%, 100% { transform: scale(1); }
             50%      { transform: scale(1.12); }
         }
-        .lyric-line.gap-line.open .gap-inner {
-            animation: gapBreath 3.6s ease-in-out infinite;
+        .gap-breath {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            /* ★ 第 50 轮：点间距 0.26em → 0.1733em（= 原值的 2/3，用户指定）。
+               实测 0.26em ≈ 9.15px → 0.1733em ≈ 6.10px。
+               三点是靠这个 flex gap 排开的，所以"缩短间距"只需改这一处；
+               但**团心位置会跟着变**，外层 .gap-inner 的缩放锚点必须同步（见上）。
+
+               ★★ 第 51 轮：间距必须让**节距落成整数像素**（否则 2-3 偏宽）。
+               现象：用户反馈"1-2 正常、2-3 偏宽"。实测布局两段完全相等
+               （中心距都 25.793px），但**渲染像素**质心 gap0=24.76 / gap1=26.35
+               —— 差 1.59px。病因不在 CSS 布局，而在**栅格化的整数吸附**：
+               每颗圆由自己的 .gap-dot::after 画（伪元素盒 = 点的 2 倍），
+               Chromium 会把[[每个盒子在局部坐标各自吸附成整数像素]]；三颗点的
+               x 小数部分不同（18 / 34.64 / 51.28 → .00/.64/.28），于是三颗圆被
+               往不同方向各推最多 ±0.5px，再乘行缩放 1.55 → 两段差出 ~1.6px。
+               ⚠ 试过并**已排除**的修法（都会让不对称只换方向、幅度不变）：
+                 will-change / translateZ（点、呼吸层、伪元素）、
+                 ::after 或祖先加微旋转（吸附发生在更上游的录制阶段）、
+                 把三颗圆搬进一个跨团伪元素（背景瓦片仍各自吸附）。
+               ✅ 有效解法：让**节距 = 点宽 + 间距**取整为整数 px
+                 （节距整数 ⇒ 三颗点坐标全整数 ⇒ 吸附方向必然一致 ⇒ 两段必然相等）。
+                 节距 0.4733em；本机 em≈35.16px → 16.64px → 取整 17px
+                 （间距随之 6.09 → 6.45px，屏幕上看 9.44 → 10.0px，
+                  仍是原 9.15px 的 ~0.70 倍，符合"大概 2/3"）。
+               ⚠ 第二行是"优先值"：round() 不被支持时整条声明在解析期就被丢弃，
+                 自动回落到第一行（保持第 50 轮的间距，不会变成 0 或 inherit）。
+               ⚠ 节距一变，团心就变 → 外层 transform-origin 也要同步（见上）。 */
+            gap: 0.1733em;
+            gap: calc(round(nearest, 0.4733em, 1px) - 0.3em);
+            height: 100%;
+            min-height: 0;
+            /* 呼吸的缩放锚点跟着外层（团心），否则内层绕自己的盒子中心缩放，
+               整团会在呼吸时左右平移 */
+            transform-origin: inherit;
+            animation: gapBreath 5s ease-in-out infinite;
+
+            /* ★ 第 50 轮新增：进入间奏时三点**渐显**（约 2s，用户指定）。
+               ── 为什么挂在这一层而不是 .gap-inner ──
+               特异性。`.lyric-line.gap-line.open .gap-inner` 是 (0,3,0)，
+               会**压过** `.gap-inner.gap-out` (0,2,0) —— 那样出口"最后 0.1s
+               渐隐"就彻底失效（点会一直留着，不淡掉）。
+               挂在这一层，两个 opacity 分属**两个元素**，天然相乘：
+                 实际显隐 = 本层 opacity（进入 0→1，2s）
+                          × 外层 opacity（出口 1→0，0.1s）
+               一个管"出现"，一个管"消失"，互不干扰。
+               ⚠ transition 只写 opacity：把 transform 也写进来会和 gapBreath
+                 动画抢同一个属性（动画会整体接管 transform）。
+               ⚠ 曲线取缓入缓出、**无过冲**：渐显只要有单调上升，
+                 带回弹的曲线在 opacity 上会出现"忽明忽暗"的闪烁感。 */
+            opacity: 0;
+            transition: opacity 2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        /* 展开（= 进入间奏）后开始那 2s 的渐显。
+           收起时 `.open` 被摘掉、点回到 opacity 0 —— 但那一帧它们已经被出口
+           淡透过，所以看不见任何回退。
+           ⚠ 这条**必须**用 .gap-breath 作主体；写成 .gap-inner 版本会压死
+             .gap-inner.gap-out（同上）。 */
+        .lyric-line.gap-line.open .gap-breath {
+            opacity: 1;
+        }
+        /* 等待点行展开时，外层要停掉继承来的呼吸（真实心跳由 .gap-breath 给）；
+           同时给 height/margin 补过渡 —— 它们本来是「随继承到 .open 的
+           transition」在跑，现在被 animation: none 截断了这个继承。 */
+        .lyric-line.gap-line.open {
+            animation: none;
+            transition:
+                height 0.62s cubic-bezier(0.22, 1, 0.32, 1),
+                margin 0.62s cubic-bezier(0.22, 1, 0.32, 1),
+                opacity 0.44s ease,
+                filter 0.44s ease,
+                transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        /* 涨大态：外层缩放的目标值抬到 1.2（过渡负责缓动到位） */
+        .gap-inner.gap-closing {
+            --gap-zoom: 1.2;
+        }
+        /* ★ 第 48 轮新增：出口 —— 间奏最后 0.1s 里「缩小 + 渐隐」。
+           目标 0.8 是**相对涨大态**的收缩（1.2 → 0.8，缩掉三分之一），
+           同时 opacity 1 → 0，于是下一句开口那一帧点上已经看不见东西。
+           ⚠⚠ 源码顺序是硬约束：本条必须写在 .gap-inner.gap-closing **之后**。
+              两者特异性都是 (0,2,0)，只能靠"后写的赢"让 0.8 盖过 1.2。
+           ⚠ .lyric-line.gap-line.closing .gap-inner 是 (0,3,0)，会赢过本条；
+              但那发生在"行收起"阶段，此时点已经淡透，无妨。
+           ⚠ 触发/清理全在 JS：remain ≤ GAP_OUT_LEAD 时挂上，
+              收起后由 scheduleGapRetractCleanup 连同 .closing/.gap-closing 一起摘掉
+              —— 不摘的话下次展开会带着 opacity:0 出现（"点没了"）。 */
+        .gap-inner.gap-out {
+            --gap-zoom: 0.8;
+            opacity: 0;
+            transition:
+                --gap-zoom 0.1s cubic-bezier(0.4, 0, 0.2, 1),
+                opacity    0.1s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        /* 收起最后一帧：先合拢（外层 height 已经在 0.62s 前开跑），
+           内层延迟 0.12s 再缩回 —— 末端对齐，读起来就是「缩小的同时收起」。
+           ★ 第 48 轮起这一条基本只作**兜底**：正常情况下点在最后 0.1s 就已经
+             缩小并淡透（.gap-inner.gap-out），这里的 0.8→1 是在不可见状态下跑的。
+             留着它是为了防"极短间奏 / 掉帧"导致 .gap-out 没挂上时，
+             仍然有一次收尾而不是硬跳。 */
+        .lyric-line.gap-line.closing .gap-inner {
+            --gap-zoom: 1;
+            transition: --gap-zoom 0.5s cubic-bezier(0.4, 0, 0.2, 1) 0.12s;
         }
 
         @supports not (background-clip: text) {
@@ -1260,7 +1518,7 @@
 </head>
 <body>
     <div class="lyric-stage" id="lyricStage">
-        <!-- 背景图片层：只有同目录存在 backpicture.jpg 时才会淡入（见 initBackPicture） -->
+        <!-- 背景图片层：只在 WE 面板选了「自定义背景图」时淡入（we-glue.js 驱动） -->
         <div class="bg-photo" id="bgPhoto" aria-hidden="true"></div>
         <!-- 动态背景：专辑主色 → Apple Music 式四色渐变（WebGL）。见 bgShaderInit -->
         <canvas class="bg-shader" id="bgShader" aria-hidden="true"></canvas>
@@ -1658,8 +1916,16 @@
                 targetProgress = 0;
                 currentProgress = 0;
                 resyncBgReveals(0);
-                // 新歌的时长还没拿到，先清空进度条，等 /status 回来再填
-                trackDuration = 0;
+                /* ★ 第 52 轮：这里**不要**再清 trackDuration。两个原因：
+                   ① 顺序 bug：fetchStatus 里"时长"先写（约 4566 行）、紧跟着
+                      下面的"名字变更"分支调 resetClock() 又把它清成 0 ——
+                      于是走轮询路径切歌后，进度条会显示 0:00，直到下一次
+                      状态轮询（最长 10s）才恢复。
+                   ② 自动切歌的判据要用它：从进度侧识别"曲尾→归零"必须知道曲长
+                      （见 syncClock → freezeForAutoAdvance）。清掉它，那条防线
+                      就永远不生效 —— 而只有 name 事件先到时才拦得住（实测自动
+                      切歌恰恰是进度先到）。
+                   进度位置本身已经归零，分母留着不会让进度条显示错值。 */
                 shownSec = -1;
                 shownDur = -1;
                 updateProgressUI(0);
@@ -1689,6 +1955,19 @@
                     const pred = clockProgress(now);   // 先积分到此刻，再算误差
                     const err = p - pred;
                     if (hard || Math.abs(err) > CLOCK_HARD_ERR) {
+                        /* ★ 第 52 轮：歌尾自动切歌 —— 进度"先"归零、name 晚到，这段
+                           真空里旧列表会被滚回第一行（用户看到"歌词往上复位"）。
+                           三条判据同时成立才认定：
+                             ① 不是用户拖动（!hard；进度条自己的拖动另有
+                                seekPendingUntil 早退，走不到这里）
+                             ② 对齐前已经在曲尾 4s 内
+                             ③ 新进度 < 3s 且后退 > 3s
+                           详见 freezeForAutoAdvance（含"冻结必须有出口"的兜底）。 */
+                        if (!hard && trackDuration > 0 && pred >= trackDuration - 4 &&
+                            p < 3 && (pred - p) > 3) {
+                            freezeForAutoAdvance('progress ' + pred.toFixed(1) + 's → ' +
+                                p.toFixed(1) + 's（曲尾 ' + trackDuration.toFixed(1) + 's）');
+                        }
                         // 拖动进度 / 切歌 / 长时间丢包：直接对齐
                         clockPos = p;
                         lastClockT = now;
@@ -1938,6 +2217,77 @@
             // ==================== 翻译歌词（tlyric） ====================
             // tlyric 是「翻译 LRC」，与主歌词共用同一时间轴，只是内容换成译文。
             // 这里只解析出 {time, text}（不需要逐字），交给 alignTransLyric 对齐。
+            // ==================== 歌词归属校验（切歌串台的根治手段）====================
+            /* 为什么需要它：`/lyric-all` **不返回任何歌曲身份字段** ——
+               只有 lyric / tlyric / rlyric / lxlyric 四个字符串（实测确认）。
+               而"从洛雪添加新歌"这条路径上，SSE 的 name 事件、/status 的 progress、
+               以及 /lyric-all 的响应可能交错到达：旧歌的歌词会晚一步落地，
+               于是画面上留下"歌已换、词还是上一首"的状态，而且没人能发现它错了。
+
+               好在**歌词文本自己就带身份标签**：标准 LRC 头部有
+                   [ti:歌名]  [ar:歌手]
+               这是唯一可靠的归属凭据。拿它跟当前歌名/歌手比对：
+                 · 能对上  → 这份歌词确实属于当前这首歌，放行；
+                 · 对不上  → 是上一首的迟到响应，丢弃并（在时限内）重取；
+                 · 标签缺失 → 无法判定，放行（宁可显示也不留空，由下面的
+                              "落地后复核"兜底再试一次）。
+               比对刻意做得宽松（去空格/标点/大小写，包含即算命中）：
+               洛雪拿到的 [ti:] 常常带 " (Live)"、"feat. xxx" 之类的后缀，
+               严格相等会把正确歌词误判成串台，反而造成"永远加载不出来"。 */
+            function parseLrcIdentity(text) {
+                const out = { ti: '', ar: '' };
+                if (!text || typeof text !== 'string') return out;
+                // 只扫前 40 行头部（标签总在最前面，避免到大正文里误匹配）
+                const lines = text.split(/\r?\n/).slice(0, 40);
+                for (const raw of lines) {
+                    if (!out.ti) {
+                        const m = raw.match(/\[ti:\s*([^\]]*)\]/i);
+                        if (m) out.ti = m[1].trim();
+                    }
+                    if (!out.ar) {
+                        const m = raw.match(/\[ar:\s*([^\]]*)\]/i);
+                        if (m) out.ar = m[1].trim();
+                    }
+                    if (out.ti && out.ar) break;
+                }
+                return out;
+            }
+
+            // 归属比对用的归一化：去掉空白、常见分隔符与括号内容，全部小写。
+            // "青春修炼手册 (Live)" 与 "青春修炼手册" 归一化后前者包含后者 → 命中。
+            function normSongText(s) {
+                if (!s) return '';
+                return String(s)
+                    .toLowerCase()
+                    .replace(/[（(\[【].*?[）)\]】]/g, '')   // 去掉括号补充说明
+                    .replace(/[\s\-_·・、,，.。!！?？'"“”‘’/\\|]+/g, '');
+            }
+
+            /* 返回 true = 这份歌词"可能属于"目标歌曲；false = 明确不符（应丢弃）。
+               两边任一为空则无法判定 → 返回 true（放行）。 */
+            function lyricMatchesSong(lrcText, targetName, targetSinger) {
+                const id = parseLrcIdentity(lrcText);
+                const nName = normSongText(targetName);
+                const nTi = normSongText(id.ti);
+                const nSing = normSongText(targetSinger);
+                const nAr = normSongText(id.ar);
+
+                // 歌名：任一方向包含即命中（洛雪的 [ti:] 常带副标题/后缀）
+                if (nName && nTi) {
+                    if (nTi.indexOf(nName) < 0 && nName.indexOf(nTi) < 0) return false;
+                }
+                /* 歌手：只在"歌名也对上且双方都有值"时才作为补充证据 ——
+                   单看歌手太容易误杀（[ar:] 可能是合唱名单、或洛雪填的是专辑艺人），
+                   而歌名对上了基本就能确定是同一首。 */
+                if (nSing && nAr && nTi && nName &&
+                    nAr.indexOf(nSing) < 0 && nSing.indexOf(nAr) < 0) {
+                    // 歌名命中但歌手完全不符：可能是同名翻唱，按不符处理，
+                    // 由调用方在时限内重取一次；再不符就接受（见 fetchLyric 的守卫）。
+                    return false;
+                }
+                return true;
+            }
+
             function parseTransLyric(text) {
                 if (!text || typeof text !== 'string') return [];
                 const rawLines = text.split(/\r?\n/);
@@ -2207,6 +2557,41 @@
                 if (scrollAnim) settleScroll();
             }
 
+            /* ★★ 第 52 轮：从**进度侧**识别"歌尾自动切歌"，并立刻冻结旧列表 ——
+               这就是"歌词往上复位"在**自动切歌**路径上的根因。
+               现象：洛雪在歌尾自动切歌时 progress 会**先**归零，而 name 事件晚到
+               （几百 ms，甚至只在兜底轮询里才被发现）。这段真空里 lyricSwitching
+               仍是 false → 播放循环带着"新歌的 0 秒"调 updateHighlight → 旧列表被
+               **动画滚回第一行**。实测量化（`.workbuddy/lyric-switch-reset-probe.js`，
+               造两首歌、按两种事件顺序触发切歌）：
+                 顺序 progress-first（= 自动切歌）→ 可见位移 **2046.8px**、单帧最大 89px
+                 顺序 name-first（= 手动切歌）    → 可见位移 **0px**
+               手动切歌之所以没事，正是因为 name 先到、这里提前冻结了旧列表。
+               现在补齐进度侧：只要"在曲尾附近被硬对齐回头部"，就按切歌处理。
+               ⚠ 冻结必须有出口：若 FREEZE_GUARD_MS 内没有任何"歌词重建"发生
+                 （例如 name 事件始终不来），自动解除 —— 否则列表会被永久冻住，
+                 表现成"歌词此后不再跟随滚动"。 */
+            const FREEZE_GUARD_MS = 2600;
+            let switchFreezeTimer = null;
+            function freezeForAutoAdvance(reason) {
+                if (!lyricSwitching) {
+                    lyricSwitching = true;
+                    freezeScrollNow();       // 让"已经在飞的滚动"也立刻停住（零跳变结算）
+                    console.info('[切歌] 进度归零 → 冻结滚动（' + reason + '）');
+                }
+                scheduleFetchStatus();       // 尽快把"新歌是谁"确认下来，别等 10s 兜底轮询
+                if (switchFreezeTimer) clearTimeout(switchFreezeTimer);
+                const seqAt = applyLyricSeq;
+                switchFreezeTimer = setTimeout(() => {
+                    switchFreezeTimer = null;
+                    if (applyLyricSeq !== seqAt) return;   // 期间真的重建过 → 由重建流程解冻
+                    if (!lyricSwitching) return;
+                    console.warn('[切歌] 冻结超时自动解除（未等到歌词重建）', reason);
+                    lyricSwitching = false;
+                    updateHighlight(findActiveLineIndex(currentProgress), true);
+                }, FREEZE_GUARD_MS);
+            }
+
             function scrollToIndex(index, immediate = false) {
                 if (lyricSwitching) return;          // 换歌过渡期：旧列表不许再被滚动
                 if (!lyricScrollEl || index < 0 || index >= lyricLineElements.length) return;
@@ -2372,6 +2757,19 @@
                         if (prev) el.classList.remove(LINE_CLASS[prev]);
                         if (want) el.classList.add(LINE_CLASS[want]);
                         if (want === 2 && prev !== 2) applyLineFit(el);
+                        /* 等待点行"本区间刚结束"（want!==2 → 不再是活动行）：
+                           在**这里**就摘掉 .open —— 而不是等 resetLineChars 里的
+                           setGapOpen。顺序很要紧：先摘 .open 让整行开始折叠，
+                           下一句紧随而上。
+                           ★ 同一帧挂 .closing：它是"缩回态"，负责把内层的缩放
+                             压回 1（外层 height 已经开始合拢，内层延迟 0.12s 缩，
+                             末端对齐 → 读起来就是"缩小的同时收起"）。
+                             必须在这儿挂而不是在 setGapOpen —— 上面那行已经把
+                             .open 摘了，setGapOpen 会因为幂等早退而到不了挂载点。 */
+                        if (prev === 2 && want !== 2 && el.classList.contains('gap-line')) {
+                            el.classList.remove('open');
+                            el.classList.add('closing');
+                        }
                     }
                     lineClassCache[i] = want;
                 }
@@ -2582,11 +2980,39 @@
                 open = !!open;
                 if (el.classList.contains('open') === open) return;
                 el.classList.toggle('open', open);
+                if (open) {
+                    // 自愈：上一轮的收尾标记若因跳转/回退等异常路径没清干净，
+                    // 在这里补一刀 —— .gap-out 带 opacity:0，残留会让下次展开的
+                    // 点整颗隐形（"间奏点不见了"），--gap-zoom 也会从 0.8 开场。
+                    // 若这次展开本来就落在最后 1s/0.1s 内，下一帧会自动重新挂上，
+                    // 所以这里清掉是安全的。
+                    el.classList.remove('closing');
+                    const gi = el.querySelector('.gap-inner');
+                    if (gi) gi.classList.remove('gap-closing', 'gap-out');
+                }
+                // 收起（含跳转/换歌等异常路径）：同一帧挂 .closing —— 外层
+                // height 立刻开始合拢，内层延迟 0.12s 缩回，两件事连成一气。
+                // 正常路径上 .open 已被 updateLineClasses 摘掉、这里会幂等早退，
+                // 所以那条路径的挂载在 updateLineClasses 里（见上）。
+                if (!open) el.classList.add('closing');
             }
 
-            // 等待点：三个圆点「一个接一个」点亮（离散，不做圆点内部的扫光）。
-            // 把等待时长三等分：进入第 k 段就点亮第 k 个点，
-            // 所以看得见的台阶就是「1 个 → 2 个 → 3 个」，等待结束时三个全亮。
+            // 收尾提醒的提前量：剩余时间 ≤ 它就开始缓动涨大。
+            // 三段排满这 1s：涨大 0.7s + 保持 0.2s + 出口 0.1s。
+            // 窗口很窄，所以"保持段"必须留得出来：若把时间全花在长大上，
+            // 点刚涨到位就被收回，观感上等于没提醒（第 46 轮踩过同类坑）。
+            const GAP_PULSE_LEAD = 1.0;
+
+            // 出口的提前量：间奏最后 0.1s —— 三个点缩到 0.8 倍并渐隐，
+            // 好让"行合拢"发生在一段空行上（不是一个大圆瘪下去），
+            // 下一句的入场因此接得平稳。见 CSS 里的 .gap-inner.gap-out。
+            const GAP_OUT_LEAD = 0.1;
+
+            // 等待点：三个圆点「一个接一个」点亮。
+            // 与最初版的区别只有"点亮的方式"：最初是整颗瞬变（lit 只取 0/1），
+            // 现在每颗点在自己的那一段里**整颗一起由暗渐变到明**（lit 连续取
+            // 0→1，无方向性，不是从左往右扫）。段数仍是三等分，所以看得见的
+            // 顺序仍是「1 个 → 2 个 → 3 个」，等待结束时三颗全亮。
             // （注意不要写成「第 i 个点在 (i+1)/3 才亮」——第三个点的阈值会落在
             //   f>=1 上，而那一刻本行恰好失活，于是第三个点永远不会亮。）
             function updateGapLine(lineIdx, progress) {
@@ -2602,12 +3028,25 @@
                     lt = charLit[lineIdx] = new Float32Array(dots.length).fill(-1);
                 }
                 for (let i = 0; i < dots.length; i++) {
-                    // 整颗点亮 / 整颗熄灭，没有中间态
-                    const lit = overall >= i ? 1 : 0;
+                    // 第 i 颗点只需管 overall 落在 [i, i+1] 的这 1/3 段：
+                    // 段前是 0（纯暗）、段中是连续渐变、段后是 1（纯亮）。
+                    const lit = Math.max(0, Math.min(1, overall - i));
                     if (lit !== lt[i]) {
                         lt[i] = lit;
-                        dots[i].classList.toggle('lit', lit === 1);
+                        // 走到两端的点挂 .lit（凭它拿辉光）；中间态靠行内 --lit
+                        dots[i].classList.toggle('lit', lit >= 1);
+                        dots[i].style.setProperty('--lit', lit);
                     }
+                }
+                // 收尾提醒：剩余时间进入 GAP_PULSE_LEAD 就把涨大挂上（一次性的，
+                // 不反复摘挂，否则会打断过渡）。
+                // 出口（缩小+渐隐）同理，只是窗口窄得多。
+                const el = lyricLineElements[lineIdx];
+                const inner = el && el.firstElementChild;
+                if (inner && inner.classList.contains('gap-inner')) {
+                    const remain = line.endTime - progress;
+                    if (remain <= GAP_PULSE_LEAD) inner.classList.add('gap-closing');
+                    if (remain <= GAP_OUT_LEAD) inner.classList.add('gap-out');
                 }
             }
 
@@ -2670,20 +3109,57 @@
                 }
             }
 
+            // 收尾提醒/缩回态的落地清理（一次性定时器，句柄存在 gapRetractTimers 里）
+            // 时机 = 缩回过渡跑完（延迟 0.12s + 时长 0.5s = 0.62s，与外层 height 同步）。
+            // 三件事一起做：
+            //   ① 摘 .closing —— 它负责"把 --gap-zoom 压回 1"；留着的话下一次
+            //      展开会带着这个 override → 点一出现就是 1.2 倍且不呼吸。
+            //   ② 摘 .gap-closing —— 本轮涨大的"已触发"标记；不摘的话下次进同一行
+            //      会带着它直接以 1.2 倍开场（涨大变成瞬跳，不是缓动）。
+            //   ③ 摘 .gap-out —— 出口的"缩小+渐隐"标记（第 48 轮新增）。
+            //      **这条最要命**：它还带 opacity:0，不摘的话下次展开点直接
+            //      整颗隐形（"间奏点不见了"），而且 --gap-zoom 会从 0.8 开场。
+            //      因为 .gap-out 自己声明了 transition，摘掉它的同时过渡声明也消失，
+            //      所以 opacity 是**瞬间**回到 1（在已合拢的不可见行里发生，无观感影响）。
+            const gapRetractTimers = new Map();
+            function scheduleGapRetractCleanup(lineEl, inner) {
+                if (!lineEl) return;
+                const prev = gapRetractTimers.get(lineEl);
+                if (prev) clearTimeout(prev);
+                gapRetractTimers.set(lineEl, setTimeout(() => {
+                    gapRetractTimers.delete(lineEl);
+                    lineEl.classList.remove('closing');
+                    // 兜底再查一次（不要只信传进来的 inner）：宁可多一次 querySelector，
+                    // 也不要因为上游漏传而导致 .gap-out 残留 → 点永久隐形。
+                    const gin = inner || lineEl.querySelector('.gap-inner');
+                    if (gin) gin.classList.remove('gap-closing', 'gap-out');
+                }, 700));
+            }
+
             // 整句播完（或切行）时还原逐字状态
             function resetLineChars(lineIdx) {
                 if (lineIdx < 0) return;
                 // 离开等待点行就合拢：上下两句歌词重新合上，三个点被裁掉
                 setGapOpen(lineIdx, false);
+                // 缩回态与涨大标记延后清理（见上）
+                const gapEl = lyricLineElements[lineIdx];
+                if (gapEl && gapEl.classList.contains('gap-line')) {
+                    const inner = gapEl.firstElementChild;
+                    if (inner && inner.classList.contains('gap-inner')) {
+                        scheduleGapRetractCleanup(gapEl, inner);
+                    }
+                }
                 if (charState[lineIdx]) charState[lineIdx].fill(0);
                 if (charLit[lineIdx]) charLit[lineIdx].fill(0);
                 const els = lyricCharElements[lineIdx];
                 if (!els) return;
                 for (let i = 0; i < els.length; i++) {
                     const el = els[i];
-                    // 等待点的圆点：只把点亮状态收回（不进逐字扫光/抬字那套）
+                    // 等待点的圆点：收回 --lit（渐变分界）与点亮态，
+                    // 不进逐字扫光/抬字那套
                     if (el.classList.contains('gap-dot')) {
                         el.classList.remove('lit');
+                        el.style.setProperty('--lit', 0);
                         continue;
                     }
                     el.classList.remove('singing', 'sung');
@@ -3903,16 +4379,26 @@
                     let charEls = null;
                     let mainEl = null;
                     if (line.isGap) {
-                        // 间奏等待点：三个点放在裁切层里（折叠时整层被裁成 0 高）
+                        /* 间奏等待点：三层结构
+                             .gap-inner   —— 裁切 + 放大量（--gap-zoom transition）
+                                            + 出口渐隐（.gap-out 的 opacity）
+                               └ .gap-breath —— 呼吸波形（keyframes，独立 transform）
+                                            + 进入时的 2s 渐显（opacity）
+                                   └ 3 × .gap-dot
+                           拆两层的原因见 CSS 注释：动画与过渡同挂一个元素会互相压；
+                           "渐显"和"渐隐"分挂两层，则两个 opacity 相乘、互不打扰。 */
                         charEls = [];
                         const inner = document.createElement('div');
                         inner.className = 'gap-inner';
+                        const breath = document.createElement('div');
+                        breath.className = 'gap-breath';
                         for (let k = 0; k < 3; k++) {
                             const dot = document.createElement('span');
                             dot.className = 'gap-dot';
-                            inner.appendChild(dot);
+                            breath.appendChild(dot);
                             charEls.push(dot);
                         }
+                        inner.appendChild(breath);
                         lineEl.appendChild(inner);
                     } else {
                         // 主歌词文字统一包进 .lyric-main 容器：横向排逐字、可换行；
@@ -3980,47 +4466,99 @@
                 requestAnimationFrame(() => {
                     if (mySeq !== applyLyricSeq) return;
                     lyricListEl.style.opacity = '1';
+                    /* 落地后复核：确认画面上的歌词确实属于"此刻正在播的那首歌"。
+                       延迟一拍（等 name 事件那一批状态都处理完）再查，
+                       避免在切歌事件流中间误判成"还没换成新歌"而多发一次请求。 */
+                    setTimeout(recheckLyricOwnership, 400);
                 });
             }
+
+            /* 歌词拉取的代次守卫：每一次"目标歌变了"都自增。
+               异步返回后先对代次，不一致就直接丢弃 —— 这是防止旧歌响应落地
+               覆盖新歌的最后一道闸（比 songKey 比对更硬：连"同名歌曲连续切换"也拦得住）。 */
+            let lyricFetchSeq = 0;
+
+            /* 拉取并应用当前歌曲的歌词。
+               `expectSeq` 由调用方传入；返回后若代次已过期，本次结果整份作废。
+               归属校验失败时最多重试 LYRIC_RETRY_MAX 次（间隔 LYRIC_RETRY_DELAY），
+               因为洛雪可能仍在切歌途中（/lyric-all 还是旧歌的缓存）。 */
+            const LYRIC_RETRY_MAX = 2;
+            const LYRIC_RETRY_DELAY = 260;
 
             async function fetchLyric(force = false) {
                 const songKey = `${currentSongName}__${currentSinger}`;
                 if (!force && songKey === lastFetchSongKey && lyricLines.length > 0) return;
                 lastFetchSongKey = songKey;
 
-                try {
-                    const res = await fetch(LYRIC_ALL_URL);
-                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                    const data = await res.json();
+                const mySeq = ++lyricFetchSeq;
+                // 本次请求"属于"哪首歌 —— 归属校验就拿它比对（而不是读全局，
+                // 因为 await 之后全局可能已经被下一首歌改写）
+                const targetName = currentSongName;
+                const targetSinger = currentSinger;
 
-                    let lrcText = data.lxlyric;
-                    if (!lrcText || !lrcText.trim()) {
-                        lrcText = data.lyric || '';
+                for (let attempt = 0; attempt <= LYRIC_RETRY_MAX; attempt++) {
+                    if (mySeq !== lyricFetchSeq) return;      // 已有更新的目标，本次作废
+                    try {
+                        const res = await fetch(LYRIC_ALL_URL);
+                        if (mySeq !== lyricFetchSeq) return;
+                        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                        const data = await res.json();
+                        if (mySeq !== lyricFetchSeq) return;
+
+                        let lrcText = data.lxlyric;
+                        if (!lrcText || !lrcText.trim()) {
+                            lrcText = data.lyric || '';
+                        }
+
+                        /* ★ 归属校验：这份歌词真的是"我刚请求的那首歌"的吗？
+                           不匹配说明洛雪此刻还在返回上一首（切歌尚未完成），
+                           稍等再试；试用完仍在错配，就接受现状（有词总比空着好，
+                           而且下一次 name 事件/状态轮询会再触发一次拉取）。 */
+                        if (lrcText && lrcText.trim() &&
+                            !lyricMatchesSong(lrcText, targetName, targetSinger)) {
+                            const id = parseLrcIdentity(lrcText);
+                            console.warn('[歌词] 归属不符，丢弃该响应',
+                                '期望=', JSON.stringify({ n: targetName, s: targetSinger }),
+                                '实得=', JSON.stringify(id),
+                                '尝试=', attempt + 1, '/', LYRIC_RETRY_MAX + 1);
+                            if (attempt < LYRIC_RETRY_MAX) {
+                                await new Promise(r => setTimeout(r, LYRIC_RETRY_DELAY));
+                                continue;                      // 重取
+                            }
+                            /* 重试用尽仍不符：不把明显属于别人的歌词贴上去 ——
+                               宁可保留当前画面（可能是空/上一首也在等下一轮纠正），
+                               避免"确定是错的歌词"被当成对的显示。 */
+                            return;
+                        }
+
+                        // 翻译歌词（tlyric）：与主歌词同一时间轴。
+                        const tlyricText = (typeof data.tlyric === 'string' && data.tlyric.trim()) ? data.tlyric : '';
+
+                        renderedLyricText = lrcText || '';   // 记住这份原文，供落地后复核
+                        applyLyric(lrcText, tlyricText);
+                        trackNameEl.textContent = currentSongName || '—';
+                        trackSingerEl.textContent = currentSinger || '—';
+                        return;
+                    } catch (err) {
+                        if (mySeq !== lyricFetchSeq) return;
+                        console.error('获取歌词失败:', err);
+                        applyLyricSeq++;                       // 作废所有在途重建
+                        lyricSwitching = true;
+                        lyricListEl.style.transition = 'opacity 0.16s ease';
+                        lyricListEl.style.opacity = '0';
+                        setTimeout(() => {
+                            if (mySeq !== lyricFetchSeq) return;   // 期间又切歌了，别动画面
+                            lyricScrollEl.scrollTop = 0;
+                            lyricListEl.innerHTML = '<div class="empty-lyric">歌词加载失败，请检查服务</div>';
+                            lyricLineElements = [];
+                            lyricCharElements = [];
+                            lyricLines = [];
+                            lyricSwitching = false;
+                            lyricListEl.style.transition = 'opacity 0.3s ease';
+                            requestAnimationFrame(() => { lyricListEl.style.opacity = '1'; });
+                        }, 170);
+                        return;
                     }
-
-                    // 翻译歌词（tlyric）：与主歌词同一时间轴的 LRC 文本。
-                    // 只在有内容时才解析，解析失败则静默回落为"无翻译"。
-                    const tlyricText = (typeof data.tlyric === 'string' && data.tlyric.trim()) ? data.tlyric : '';
-
-                    applyLyric(lrcText, tlyricText);
-                    trackNameEl.textContent = currentSongName || '—';
-                    trackSingerEl.textContent = currentSinger || '—';
-                } catch (err) {
-                    console.error('获取歌词失败:', err);
-                    applyLyricSeq++;                       // 作废所有在途重建
-                    lyricSwitching = true;
-                    lyricListEl.style.transition = 'opacity 0.16s ease';
-                    lyricListEl.style.opacity = '0';
-                    setTimeout(() => {
-                        lyricScrollEl.scrollTop = 0;
-                        lyricListEl.innerHTML = '<div class="empty-lyric">歌词加载失败，请检查服务</div>';
-                        lyricLineElements = [];
-                        lyricCharElements = [];
-                        lyricLines = [];
-                        lyricSwitching = false;
-                        lyricListEl.style.transition = 'opacity 0.3s ease';
-                        requestAnimationFrame(() => { lyricListEl.style.opacity = '1'; });
-                    }, 170);
                 }
             }
 
@@ -4091,9 +4629,62 @@
                 }
             }
 
+            /* 歌词拉取调度。
+               旧实现：300ms setTimeout，每次调用先 clearTimeout ——
+               "上一首 → 下一首"在 300ms 内连续发生时，前一次请求被直接抹掉，
+               最终只拉了一次、用的还是已经变成最新的歌名，中间那首的歌词就此丢失。
+               这正是用户报的窗口（"上一首歌词已经出来了，歌还没加载完又切下一首"）。
+
+               新实现保留 300ms 防抖（同一次切歌会被 name 事件 + 状态轮询重复触发，
+               不该发两次请求），但**防抖只作用于"同一首歌"**：
+               目标歌变了就立刻作废旧定时器、按新歌重新计时，绝不把不同歌曲合并。
+               每首歌因此都获得自己的拉取机会；落地时由 fetchLyric 的代次守卫
+               与归属校验共同把关，只有真正对得上当前歌的那份才能渲染。 */
+            let fetchTimerSongKey = '';
+
             function scheduleFetchLyric() {
-                if (fetchTimer) clearTimeout(fetchTimer);
-                fetchTimer = setTimeout(() => fetchLyric(true), 300);
+                const key = `${currentSongName}__${currentSinger}`;
+                if (fetchTimer && key === fetchTimerSongKey) {
+                    // 同一首歌的重复触发：只需要重置计时（真正的防抖场景）
+                    clearTimeout(fetchTimer);
+                } else if (fetchTimer) {
+                    // 目标歌已经变了：旧计时器立即作废，不再代表任何待办
+                    clearTimeout(fetchTimer);
+                }
+                fetchTimerSongKey = key;
+                fetchTimer = setTimeout(() => {
+                    fetchTimer = null;
+                    fetchTimerSongKey = '';
+                    fetchLyric(true);
+                }, 300);
+            }
+
+            /* 最近一次真正渲染到画面上的**歌词原文**。
+               复核归属时需要它 —— 身份标签就在 LRC 头部，而头部标签行不含
+               时间戳，不会进入 lyricLines（解析时被丢弃），所以必须单独留一份。 */
+            let renderedLyricText = '';
+
+            /* 切歌收尾复核：applyLyric 落地后调用一次。
+               "请求时归属正确"还不够 —— 洛雪的 /lyric-all 在新歌刚开始播放的一瞬间
+               可能仍返回**上一首**的缓存（此时 name 已是新歌、歌词却还没换）。
+               fetchLyric 里的归属校验＋重试是主防线；这里兜最后一道：
+               复核画面上这份歌词是否真属于当前歌，不是就解开去重、重新拉一次。
+               用时间戳限流，避免与正常调度互相触发变成请求风暴。 */
+            const LYRIC_RECHECK_MIN_GAP = 1500;   // 两次复核的最小间隔（ms）
+            let lastLyricRecheckAt = -1e9;
+
+            function recheckLyricOwnership() {
+                if (!renderedLyricText) return;                     // 还没有内容，不干预
+                const now = performance.now();
+                if (now - lastLyricRecheckAt < LYRIC_RECHECK_MIN_GAP) return;
+                if (lyricMatchesSong(renderedLyricText, currentSongName, currentSinger)) return;
+
+                lastLyricRecheckAt = now;
+                console.warn('[歌词] 落地后复核：画面上的歌词仍不属于当前歌曲，重新拉取',
+                    '期望=', JSON.stringify({ n: currentSongName, s: currentSinger }),
+                    '实得=', JSON.stringify(parseLrcIdentity(renderedLyricText)));
+                lastFetchSongKey = '';          // 解开 songKey 去重，允许再拉一次
+                fetchLyric(true);
             }
 
             // 防抖拉取状态，避免多条事件同时触发刷封面
@@ -4219,8 +4810,15 @@
                 });
 
                 es.addEventListener('lxlyric', (e) => {
-                    if (e.data && e.data !== 'null' && lyricLines.length === 0) {
+                    if (!e.data || e.data === 'null') return;
+                    /* 旧逻辑只在 lyricLines.length === 0 时重拉 —— 一旦串台落地，
+                       lyricLines 非空就再也不会恢复。现在改成：
+                       没有歌词 → 直接拉；已有歌词 → 复核归属，只有确实
+                       不属于当前歌时才重拉（recheckLyricOwnership 自带限流）。 */
+                    if (lyricLines.length === 0) {
                         scheduleFetchLyric();
+                    } else {
+                        recheckLyricOwnership();
                     }
                 });
             }
@@ -4564,7 +5162,6 @@
             // ==================== 液态玻璃：高光跟随指针 ====================
             // 只写 --mx / --my 两个自定义属性，几何换算交给 CSS 的 radial-gradient(at …)；
             // 用 rAF 节流，一帧最多一次写入（读 rect 不触发布局，因为只改了自定义属性）。
-            // 离开时清掉内联值，回到 CSS 里的初始位置（50%），已注册属性还能走过渡。
             function bindGlassSheen() {
                 const dock = document.getElementById('playerDock');
                 if (!dock) return;
@@ -4581,15 +5178,55 @@
                 };
                 dock.addEventListener('pointermove', (e) => {
                     cx = e.clientX; cy = e.clientY;
+                    cancelReset();                       // 指针回来了：取消待复位
                     if (!raf) raf = requestAnimationFrame(apply);
                 }, { passive: true });
-                const reset = () => {
-                    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+
+                /* ★★ 第 53 轮：离开时**不要立刻**把 --mx/--my 清掉。
+                   高光层 `.s-follow` 是"hover → opacity 1；离开 → 0.45s 淡出"，
+                   而清掉变量会让 radial-gradient 的圆心**立刻跳回 50% 50%（正中央）**
+                   —— 于是在这 0.45s 的淡出过程里，用户看到高光"唰地闪到中间再消失"
+                   （用户反馈的"瞬间复位 → 视觉闪烁"就是这个）。
+                   改成：离开时**留在原位**（保留最后一次写入的坐标，既不写也不删），
+                   等淡出真正结束再复位。复位必须发生在**不可见之后**，所以：
+                     · 优先等 `.s-follow` 的 opacity `transitionend`；
+                     · 再加 520ms 兜底（reduced-motion 下没有过渡 / 极快出入时
+                       transitionend 可能不触发）；
+                     · 复位前复查 opacity —— 期间指针已经回来（高光又亮起来）就不复位；
+                     · pointermove / pointerenter 一律取消待复位，否则高光会突然跳回中心。 */
+                const sheenFollow = dock.querySelector('.lg-sheen .s-follow');
+                let resetTimer = 0;
+                const doReset = () => {
+                    resetTimer = 0;
                     dock.style.removeProperty('--mx');
                     dock.style.removeProperty('--my');
                 };
+                const cancelReset = () => { if (resetTimer) { clearTimeout(resetTimer); resetTimer = 0; } };
+                const reset = () => {
+                    if (raf) { cancelAnimationFrame(raf); raf = 0; }   // 丢弃最后一个未落的写入
+                    cancelReset();
+                    if (!sheenFollow) { doReset(); return; }           // 找不到层就退回旧行为
+                    if (parseFloat(getComputedStyle(sheenFollow).opacity) <= 0.01) {
+                        doReset();                                     // 本来就不可见：无需等待
+                        return;
+                    }
+                    const finish = () => {
+                        sheenFollow.removeEventListener('transitionend', onEnd);
+                        cancelReset();
+                        // 指针已经回到控件上（高光重新亮起）→ 不复位，交回给 pointermove
+                        if (parseFloat(getComputedStyle(sheenFollow).opacity) > 0.01) return;
+                        doReset();
+                    };
+                    const onEnd = (e) => {
+                        if (e.target !== sheenFollow || e.propertyName !== 'opacity') return;
+                        finish();
+                    };
+                    sheenFollow.addEventListener('transitionend', onEnd);
+                    resetTimer = setTimeout(finish, 520);   // 0.45s 过渡 + 余量
+                };
                 dock.addEventListener('pointerleave', reset);
                 dock.addEventListener('pointercancel', reset);
+                dock.addEventListener('pointerenter', cancelReset);
             }
 
             // ==================== 控件变淡：指针不在控件上就淡下去 ====================
@@ -4653,35 +5290,8 @@
                 }, 1000);
             }
 
-            // ==================== 背景图片：同目录的 backpicture.jpg ====================
-            // 在 lyrics.html 所在目录放一张 backpicture.jpg 即可当整屏背景：
-            //   读到了 → 淡入铺满（挂 .ready），并挂 .has-photo
-            //            → 动态背景（fBm 着色器）的可见度归 0，让位给照片；
-            //   读不到（没放图 / 名字拼错 / 图片损坏）→ 什么都不做，
-            //   画面维持动态背景（或它的主色渐变兜底），等价于没有这个功能。
-            // 先用一个游离的 Image 探一次（onerror 能拿到"文件不存在"），
-            // 再交给 CSS 图层去铺；探针与上屏是同一个 URL，浏览器只会真正读一次盘。
-            function initBackPicture() {
-                if (!bgPhotoEl) return;
-                const PHOTO_URL = 'backpicture.jpg';
-                const probe = new Image();
-                probe.onload = () => {
-                    bgPhotoEl.style.backgroundImage = 'url("' + PHOTO_URL + '")';
-                    // 铺图+解码要花一点时间，等下一帧再淡入，免得先闪一下空白。
-                    // 挂上 .has-photo 之后，CSS 会把动态背景的可见度（--bg-shader-op）
-                    // 归 0 —— 照片本身已有明暗层次，让位给它；工程侧可以把这个系数
-                    // 调上去，让两者叠加。所以这里不需要 JS 干预。
-                    requestAnimationFrame(() => {
-                        bgPhotoEl.classList.add('ready');
-                        lyricStageEl.classList.add('has-photo');
-                    });
-                };
-                probe.onerror = () => {
-                    // 保持默认背景。这里不用 error 级：没放图是合法状态，不是故障
-                    console.info('[lyrics] 未找到 backpicture.jpg，沿用默认背景');
-                };
-                probe.src = PHOTO_URL;
-            }
+            // 背景图片：2026-09-23 起不再自动读取同目录的 backpicture.jpg，
+            // 只使用 WE 面板「自定义背景图」里选的图（we-glue.js 的 syncPhoto 负责）。
 
             /* ==================== 液态玻璃：边缘折射（SVG 位移滤镜） ====================
                移植自 shuding/liquid-glass（用户提供的参考实现）：
@@ -4869,7 +5479,6 @@
                 attachLiquidGlass(); // 液态玻璃：SVG 位移滤镜的边缘折射（shuding/liquid-glass 方案）
                 bgShaderInit();      // 动态背景（WebGL + fBm）；无 WebGL 则退回主色渐变
                 bindDockDim();
-                initBackPicture();
                 fetchLyric(true).catch(() => {});
                 fetchStatus().catch(() => {});
                 initSSE();

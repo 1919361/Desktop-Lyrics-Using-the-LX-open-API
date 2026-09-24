@@ -87,6 +87,11 @@ html body .lyric-line {
     font-size: calc(2.2rem * var(--we-lyric-scale, 1));
     line-height: var(--we-lh, 1.5);
     text-align: var(--we-text-align, center);
+    /* 缩放原点必须在「所有状态」下恒定（此前只有 .active 设了原点）：
+       行失活的瞬间原点会跳回默认的中心 —— 已经放大的行先横跳回居中、
+       再慢慢收回去（左/右对齐时非常明显，用户报的"收合动画切回居中"）。
+       原点恒定钉在对齐边上，放大幅度和收合动画就都贴着对齐边走。 */
+    transform-origin: var(--we-line-origin, 50% 50%);
     /* 兜底是 inherit —— 没选字体时这里就等于原样，选了才换。
        字体栈由 we-glue.js 拼（选中族 + 原 body 字体兜底），见 fontStack()。 */
     font-family: var(--we-font, inherit);
@@ -126,12 +131,29 @@ html body .lyric-line.has-trans.active {
 html body .lyric-main { justify-content: var(--we-justify, center); }
 html body .lyric-line { align-items: var(--we-line-items, flex-start); }
 /* ③ 间奏点在盒子内的锚边 —— 左对齐钉左、右对齐钉右（居中保持 JS 落位）。
-     同时把内外两层的缩放原点也跟锚边走：盒子的展开放大（scale 1.55）和
-     内层呼吸（gapBreath 的 scale）都写死了从左缘长 —— 右对齐时点在右缘，
-     每次呼吸/开合都会被甩出几十像素（"左右乱飘"的根源）。 */
-html body .gap-inner {
+     同时把两层的缩放原点也跟锚边走：外层（放大量）与呼吸层的缩放
+都锚在**三个点组成的点团的团心**上（18px + 0.6233em：三个 0.3em 的点
+加 0.1733em 间距 = 1.2467em 宽，团心在 0.6233em）——
+     锚错位置时右对齐会让点在呼吸/放大时被甩出几十像素（"左右乱飘"的根源）。
+   ⚠ 第 46 轮起 DOM 多了一层 .gap-breath（呼吸独立成层），
+     横向对齐与原点必须同时作用到这两层上。 */
+html body .gap-inner,
+html body .gap-breath {
     justify-content: var(--we-gap-anchor, flex-start);
-    transform-origin: var(--we-gap-inner-origin, calc(18px + 0.71em) 50%);
+    transform-origin: var(--we-gap-inner-origin, calc(18px + 0.6233em) 50%);
+}
+/* ★ 第 51 轮：点团节距取整（见 index.html 的 .gap-breath）后，团心 = 18px +
+   0.15em + 1 个节距，缩放原点必须同步，否则放大/呼吸会偏离团心。
+   ⚠ 这里 round() 写在 var() 的**兜底值**里，属于"计算期才失效"——
+     直接写会让整条声明变成 invalid-at-computed-value-time 并**回落到初始值
+     50% 50%**（比不写更糟）。所以用 @supports 门控：引擎不支持 round() 时
+     整个块不生效，上面那条（0.6233em）照旧。 */
+@supports (width: round(nearest, 1px, 1px)) {
+    html body .gap-inner,
+    html body .gap-breath {
+        transform-origin: var(--we-gap-inner-origin,
+            calc(18px + 0.15em + round(nearest, 0.4733em, 1px)) 50%);
+    }
 }
 html body .lyric-line.gap-line {
     transform-origin: var(--we-gap-box-origin, 0 50%);

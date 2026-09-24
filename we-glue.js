@@ -42,7 +42,7 @@
         lyricScale: 1, activeScale: 2, dimK: 1,
         align: 'center', padX: null, lineHeight: null,
         /* 字体：一套设置同时管「歌词」和「天际屏背景字」，由 fontTarget 决定作用范围 */
-        fontFamily: 'system', fontCustom: '', fontTarget: 'both', fontFile: '',
+        fontFamily: 'system', fontCustomOn: true, fontTarget: 'both',
         sweep: true, charDim: 0.28, glow: 1, gapOn: true,
         /* 翻译歌词：默认值 == 源 CSS 里的硬编码值（0.52 / 0.72 / 白） */
         transOn: true, transScale: 0.3, transOpacity: 0.85, transColor: '1 1 1',
@@ -277,22 +277,56 @@
     }
 
     /* ========================================================================
-     *  背景图片
-     *  工程自带 backpicture.jpg；用户可以：
-     *    · 关掉（bg_enable = false）→ 回到默认深色渐变
-     *    · 换成自己的图（bg_file 非空）→ 读不到就自动退回自带的
+     *  背景图片（2026-09-23 简化，用户指定）
+     *  只使用 WE 面板「自定义背景图」里选的图（bg_file）：
+     *    · 没选 / 关掉 bg_enable → 没有照片，默认律动背景；
+     *    · 选了 → 加载它；失败会在画面左下角**无条件**显示失败的 URL，
+     *      不再自动读取目录下的 backpicture.jpg。
      * ====================================================================== */
 
     var photoRetry = 0;
+    var lastBgFail = '';   /* 最近一次「自定义背景图」加载失败的 URL（诊断用） */
 
     function photoUrl() {
-        if (!S.bgFile) return 'backpicture.jpg';
+        if (!S.bgFile) return '';   /* 没选图 = 无照片 */
         var f = String(S.bgFile).trim();
         if (/^(https?|file|data):/i.test(f)) return f;
-        f = f.replace(/\\/g, '/');
-        if (/^[a-zA-Z]:\//.test(f)) return 'file:///' + f;   /* C:/Users/... */
-        if (f.indexOf('//') === 0) return 'file:' + f;        /* \\server\share → UNC */
-        return f;                                             /* 工程内相对路径 */
+        /* ★ WE 传过来的文件属性值是 **URL 编码** 过的：盘符冒号是 %3A
+           （weblog 实测：C%3A/Users/xxx/a.jpg）。必须先解码还原成本机路径，
+           否则盘符判断匹配不上，会被误当成「工程内相对路径」→ 文件永远加载不出来。 */
+        var dec = f;
+        try { dec = decodeURIComponent(f); } catch (e) { dec = f; }
+        dec = dec.replace(/\\/g, '/');
+        /* 还原成 URL 时逐段重新编码（空格/中文/#/% 都安全），盘符冒号保留 */
+        function seg(x, i) {
+            return i === 0 && /^[a-zA-Z]:$/.test(x) ? x : encodeURIComponent(x);
+        }
+        if (/^[a-zA-Z]:\//.test(dec)) {
+            return 'file:///' + dec.split('/').map(seg).join('/');   /* C:/Users/... */
+        }
+        if (dec.indexOf('//') === 0) return 'file:' + dec;            /* UNC */
+        return dec.split('/').map(encodeURIComponent).join('/');      /* 工程内相对 */
+    }
+
+    /* bg_debug 开着时，把背景图链路状态直接画在画面左下角（排查用）。
+       关着时调用一次即清除。 */
+    function bgDebugLine(txt, force) {
+        var d = document.getElementById('we-bg-debug');
+        if (!S.bgDebug && !force) {
+            if (d && d.parentNode) d.parentNode.removeChild(d);
+            return;
+        }
+        if (!d) {
+            d = document.createElement('div');
+            d.id = 'we-bg-debug';
+            d.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:99;'
+                + 'font:12px/1.5 Consolas,monospace;color:#ffd76a;'
+                + 'background:rgba(0,0,0,.55);padding:6px 10px;border-radius:8px;'
+                + 'pointer-events:none;max-width:70%;word-break:break-all;'
+                + 'text-shadow:0 1px 2px rgba(0,0,0,.8)';
+            (document.getElementById('lyricStage') || document.body).appendChild(d);
+        }
+        d.textContent = txt;
     }
 
     function syncPhoto() {
@@ -300,15 +334,18 @@
         var stage = document.getElementById('lyricStage');
         if (!el) return;
 
-        if (!S.bgOn) {
+        var url = S.bgOn ? photoUrl() : '';
+        if (!url) {
+            /* 开关关着 / 没选图：不显示照片（默认律动背景） */
+            lastBgFail = '';
             el.classList.remove('ready');
             el.style.opacity = '0';                 /* 行内样式，压得住 .ready */
             if (stage) stage.classList.remove('has-photo');
             syncPulse();
+            bgDebugLine(S.bgOn ? '未选择自定义背景图——默认律动背景'
+                               : '背景图开关已关（bg_enable=false）');
             return;
         }
-
-        var url = photoUrl();
         el.style.opacity = '';
         if (el.getAttribute('data-we-url') === url) {
             /* 这张图之前已经加载成功过（onload 里盖的章），不用再探一次。
@@ -320,41 +357,52 @@
         }
 
         var probe = new Image();
+        var probeDone = false;
+        var failProbe = function (why) {
+            if (probeDone) return;
+            probeDone = true;
+            lastBgFail = url;
+            console.info('[lyrics-we] 自定义背景图读取失败（' + why + ': ' + url + '），维持默认律动背景');
+            /* 失败是用户可感知的异常：诊断条**无条件**显示（不依赖 bg_debug），
+               换图成功或清空后会自动消失。 */
+            bgDebugLine('自定义背景图加载失败: ' + url + '（' + why + '）', true);
+            el.classList.remove('ready');
+            el.style.opacity = '0';
+            if (stage) stage.classList.remove('has-photo');
+        };
         probe.onload = function () {
+            if (probeDone) return;
+            probeDone = true;
             el.setAttribute('data-we-url', url);
             el.style.backgroundImage = 'url("' + url + '")';
             requestAnimationFrame(function () {
                 el.classList.add('ready');
                 if (stage) stage.classList.add('has-photo');
             });
+            lastBgFail = '';
+            bgDebugLine('背景图已加载: ' + url);
         };
-        probe.onerror = function () {
-            if (url !== 'backpicture.jpg') {
-                console.info('[lyrics-we] 自定义背景图读取失败，退回工程自带的 backpicture.jpg');
-                S.bgFile = '';
-                syncPhoto();
-                return;
-            }
-            el.classList.remove('ready');
-            el.style.opacity = '0';
-            if (stage) stage.classList.remove('has-photo');
-            console.info('[lyrics-we] 读取不到 backpicture.jpg，保持默认背景');
-        };
+        probe.onerror = function () { failProbe('读取失败'); };
+        /* 既不成功也不失败（超大图 / 老 CEF 卡住）→ 8 秒按失败算，不静默 */
+        setTimeout(function () { if (!probeDone) failProbe('超时无响应'); }, 8000);
         probe.src = url;
     }
 
     /* ========================================================================
-     *  字体
-     *  「跟随原样式」= 一个变量都不写，CSS 里 var() 的兜底值 inherit 生效，
-     *  于是与原版逐项一致。选定字体后，选中的族挂在最前，
-     *  后面永远拖着原页面的 body 字体栈 —— 这样缺字（音符符号、emoji、
-     *  生僻字）时的兜底行为不变，字形覆盖只增不减。
+     *  字体（规则由用户指定，2026-09-22 重写）
+     *    ① 壁纸每次启动都探测「运行目录」（index.html 所在目录）下的
+     *       CustomFont.ttf，没有再试 CustomFont.otf；
+     *    ② 探测到 → 用它（注册为 WE Custom Font），属性面板的字体下拉
+     *       被屏蔽，选什么都不影响；
+     *    ③ 没探测到 → 按下拉里选的字体为准。
+     *  选中的族挂在最前，后面永远拖着原页面的 body 字体栈 —— 缺字
+     *  （音符、emoji、生僻字）时的兜底行为不变，字形覆盖只增不减。
      * ====================================================================== */
 
     var FONT_TAIL = 'system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif';
     var GENERIC = { 'system-ui': 1, 'sans-serif': 1, 'serif': 1, 'monospace': 1, 'cursive': 1, 'fantasy': 1 };
-    var FACE_FAMILY = 'WE 自定义字体';
-    var faceOn = false;
+    var CUSTOM_FONT_FAMILY = 'WE Custom Font';
+    var customFontOn = false;   /* 运行目录探测到 CustomFont.ttf/otf 并加载成功 */
 
     /* 用户可能填出任意字符串。引号 / 反斜杠 / 分号 / 花括号会把整条 CSS 声明
        弄坏，一律去掉；控制字符换成空格。keepComma 为真时保留逗号（用户自己写的整栈）。 */
@@ -372,157 +420,57 @@
         return GENERIC[n.toLowerCase()] ? n.toLowerCase() : '"' + n + '"';
     }
 
-    /* 自定义字体文件 → 可以在 CSS 里引用的 URL */
-    function faceUrl(p) {
-        p = String(p == null ? '' : p).trim();
-        if (!p) return '';
-        if (/^(data:|blob:|https?:|file:)/i.test(p)) return p;
-        var s = p.replace(/\\/g, '/');
-        if (/^[A-Za-z]:\//.test(s)) return 'file:///' + encodeURI(s);      /* 绝对路径 */
-        if (s.charAt(0) === '/') return 'file://' + encodeURI(s);
-        /* 相对路径按「工程根目录」解析（index.html 就在那儿） */
-        return s.split('/').map(encodeURIComponent).join('/');
+    /* ------------------------------------------------------------------
+     *  启动探测：运行目录下有没有 CustomFont.ttf / CustomFont.otf。
+     *  FontFace.load() 本身就是「存在性 + 可解析性」检查 —— 文件不存在
+     *  或解析失败都会 reject，依次往后试；两个都没有就维持下拉选择。
+     *  加载成功立即 re-apply，此后 fontStack() 永远以它为最优先。
+     * ------------------------------------------------------------------ */
+    function probeCustomFont() {
+        var names = ['CustomFont.ttf', 'CustomFont.otf'];
+        var i = 0;
+        (function next() {
+            if (i >= names.length) return;
+            var name = names[i++];
+            /* 走 fetch(no-store) 拿字节再转 Blob URL —— 绕开 Chromium 的资源
+               缓存：删掉文件后重载壁纸必须立刻回退到下拉选择，不能还命中
+               上一次启动缓存下来的字体。 */
+            fetch(name, { cache: 'no-store' }).then(function (r) {
+                if (!r.ok) throw new Error('not found');
+                return r.blob();
+            }).then(function (blob) {
+                var obj = URL.createObjectURL(blob);
+                var ff = new FontFace(CUSTOM_FONT_FAMILY, 'url(' + obj + ')');
+                return ff.load().then(function (loaded) {
+                    try { document.fonts.add(loaded); } catch (e) { }
+                    try { URL.revokeObjectURL(obj); } catch (e) { }
+                    customFontOn = true;
+                    try { console.log('[we-glue] 运行目录检测到 ' + name + '，已启用自定义字体（屏蔽下拉选择）'); } catch (e) { }
+                    reapply();
+                });
+            }).catch(function () { next(); });
+        })();
     }
-
-    /* 把 @font-face 挂上 / 摘掉。只在路径变了才动 DOM。 */
-    function syncFace() {
-        var url = faceUrl(S.fontFile);
-        var el = document.getElementById('we-font-face');
-        if (!url) {
-            if (el && el.parentNode) el.parentNode.removeChild(el);
-            faceOn = false;
-            return;
-        }
-        if (!el) {
-            el = document.createElement('style');
-            el.id = 'we-font-face';
-            (document.head || root).appendChild(el);
-        }
-        /* font-display:swap —— 字体没加载完时先用兜底字体画，不要白屏等 */
-        var css = '@font-face{font-family:"' + FACE_FAMILY + '";src:url("' + url + '");font-display:swap}';
-        if (el.textContent !== css) el.textContent = css;
-        faceOn = true;
+    function reapply() {
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function () { apply(); });
+        } else { apply(); }
     }
+    probeCustomFont();
 
-    /* ========================================================================
-     *  运行时字体扫描 —— 每次壁纸启动都会跑一遍，用户永远不需要手动扫描
-     * ======================================================================
-     *  网页拿不到系统字体清单（queryLocalFonts 需要"用户手势"授权，
-     *  壁纸自动启动时没有），所以用经典测量法：同一串文字分别用
-     *  「候选字体 + monospace」和纯 monospace 画到 canvas 上量宽度，
-     *  宽度不一样 = 候选字体真的装了（它画出了不同的字形）。
-     *  几十个候选一次只需几毫秒，结果缓存在本次运行内。
-     *
-     *  排序规则（用户指定）：**按是否支持中文排序** —— 支持中文的排前面。
-     *  判定：用一串中文字去量，宽度与基线不同 = 这个字体画得出不同的
-     *  汉字字形 = 支持中文；宽度相同 = 中文是回退到 monospace 画的 = 不支持。
-     *  「自动」模式取排序后的第一个（即系统里检测到的第一个中文字体）；
-     *  一个中文字体都没有才退回页面原字体。
-     *  局限：测量法只能测"已知名字"的候选池 —— 池外的字体检测不到，
-     *  但「自定义字体名」文本框可以填任意字体名，不受此限。
-     * ====================================================================== */
-    var FONT_CANDIDATES = [
-        /* [字体族名, 是否支持中文]。中文支持是静态标注（构造池子时已知的事实）——
-           运行时用宽度量不出来：全角汉字在任何中文字体里的 advance 都恒等于字号，
-           "雅黑还是宋体"量宽度完全一样；Segoe UI 这类无中文字体的，中文又总是
-           回退到雅黑渲染，宽度同样相同。所以：运行时只检测「装没装」（拉丁字形
-           宽度差异），「支不支持中文」按标注来排序。 */
-        ['LXGW WenKai GB', 1], ['霞鹜文楷 GB', 1], ['LXGW WenKai', 1], ['霞鹜文楷', 1],
-        ['LXGW WenKai Mono', 1], ['霞鹜新晰黑', 1],
-        ['MiSans', 1], ['MiSans VF', 1], ['HarmonyOS Sans SC', 1], ['OPPO Sans', 1],
-        ['HONOR Sans', 1],
-        ['Source Han Sans CN', 1], ['思源黑体', 1], ['Source Han Sans SC', 1],
-        ['思源黑体 CN', 1], ['Source Han Serif CN', 1], ['思源宋体', 1],
-        ['Noto Sans CJK SC', 1], ['Noto Serif CJK SC', 1], ['Noto Sans SC', 1],
-        ['Sarasa Gothic SC', 1], ['更纱黑体', 1],
-        ['得意的黑', 1], ['得意黑', 1], ['Resource Han Rounded', 1], ['资源圆体', 1],
-        ['Yozai', 1], ['悠哉字体', 1],
-        ['Microsoft YaHei', 1], ['微软雅黑', 1], ['Microsoft YaHei UI', 1],
-        ['DengXian', 1], ['等线', 1], ['SimHei', 1], ['黑体', 1],
-        ['KaiTi', 1], ['楷体', 1], ['FangSong', 1], ['仿宋', 1],
-        ['SimSun', 1], ['中易宋体', 1],
-        ['STXihei', 1], ['华文细黑', 1], ['STKaiti', 1], ['华文楷体', 1],
-        ['STZhongsong', 1], ['华文中宋', 1], ['STFangsong', 1], ['华文仿宋', 1],
-        ['YouYuan', 1], ['幼圆', 1], ['LiSu', 1], ['隶书', 1],
-        ['STHupo', 1], ['华文琥珀', 1], ['STCaiyun', 1], ['华文彩云', 1],
-        ['STLiti', 1], ['华文隶书', 1],
-        ['Segoe UI', 0], ['Arial', 0]
-    ];
-    var detectedFonts = null;    /* null = 还没检测过（本次运行内缓存） */
-
-    function detectFonts() {
-        if (detectedFonts) return detectedFonts;
-        detectedFonts = [];
-        try {
-            var c = document.createElement('canvas');
-            var ctx = c.getContext('2d');
-            if (!ctx) return detectedFonts;
-            var latinProbe = 'mmmmmmmmllii WWL 0O';
-            ctx.font = '72px monospace';
-            var latinBase = ctx.measureText(latinProbe).width;
-            for (var i = 0; i < FONT_CANDIDATES.length; i++) {
-                var name = FONT_CANDIDATES[i][0], cjkFlag = FONT_CANDIDATES[i][1];
-                try {
-                    /* 「装没装」：拉丁字形宽度与 monospace 基线不同 = 这个字体真的
-                       在画（未安装时拉丁全部回退到 monospace，宽度与基线相同）。 */
-                    ctx.font = '72px "' + name + '", monospace';
-                    if (Math.abs(ctx.measureText(latinProbe).width - latinBase) > 1) {
-                        detectedFonts.push({ name: name, cjk: !!cjkFlag });
-                    }
-                } catch (e) { }
-            }
-            /* 按是否支持中文排序：中文优先（稳定排序，同组保持池内顺序） */
-            detectedFonts.sort(function (a, b) { return (b.cjk ? 1 : 0) - (a.cjk ? 1 : 0); });
-            var cjkN = detectedFonts.filter(function (f) { return f.cjk; }).length;
-            try {
-                console.log('[we-glue] 字体扫描：候选 ' + FONT_CANDIDATES.length +
-                    '，可用 ' + detectedFonts.length + '（其中支持中文 ' + cjkN +
-                    ' 个）→ ' + detectedFonts.slice(0, 10).map(function (f) {
-                        return f.name + (f.cjk ? '·中' : '');
-                    }).join(', ') + (detectedFonts.length > 10 ? ' …' : ''));
-            } catch (e) { }
-        } catch (e) { }
-        return detectedFonts;
-    }
-
-    /* 「自动」= 排序后的第一个：优先用系统里检测到的中文字体 */
-    function autoPickFont() {
-        var have = detectFonts();
-        return have.length ? have[0].name : '';
-    }
-
-    /* 排查出口：控制台里 window.__weFontsDebug() 可看扫描排序结果与最终字体栈 */
-    window.__weFontsDebug = function () {
-        var have = detectFonts();
-        return {
-            sorted: have.map(function (f) { return { name: f.name, cjk: f.cjk }; }),
-            auto: autoPickFont(), family: S.fontFamily, custom: S.fontCustom
-        };
-    };
-
-    /* 算出最终的 font-family 栈；返回空串 = 不改变字体 */
+    /* 算出最终的 font-family 栈；返回空串 = 不改变字体（跟随原页面字体）。
+       「运行目录有 CustomFont.ttf/otf」且「开关 font_custom_on 开着」时，
+       自定义字体第一优先（屏蔽下拉选择）；开关关掉就按下拉选的字体来。
+       'system' 是旧默认值的残留兼容，等于不选。 */
     function fontStack() {
         var head = '';
-        var custom = cleanFont(S.fontCustom, true);
-        if (custom) {
-            /* 带逗号 = 用户自己写了一整套，逐段规整后保持他写的顺序 */
-            head = custom.indexOf(',') >= 0
-                ? custom.split(',').map(quoteFamily).filter(Boolean).join(', ')
-                : quoteFamily(custom);
-        } else if (S.fontFamily === 'system') {
-            /* 「自动」：每次启动检测系统字体，按偏好顺序用第一个可用的。
-               一个都没检测到（极端环境）才退回页面原字体。 */
-            var auto = autoPickFont();
-            if (auto) head = quoteFamily(auto);
-        } else if (S.fontFamily) {
+        if (customFontOn && S.fontCustomOn) {
+            head = '"' + CUSTOM_FONT_FAMILY + '"';
+        } else if (S.fontFamily && S.fontFamily !== 'system') {
             head = quoteFamily(S.fontFamily);
         }
-        var parts = [];
-        if (faceOn) parts.push('"' + FACE_FAMILY + '"');
-        if (head) parts.push(head);
-        if (!parts.length) return '';
-        parts.push(FONT_TAIL);
-        return parts.join(', ');
+        if (!head) return '';
+        return head + ', ' + FONT_TAIL;
     }
 
     /* 切换「水平对齐」的过渡动画（FLIP）：
@@ -606,17 +554,29 @@
         }
         lastAlign = S.align;
 
-        var A = S.align === 'left' ? { list: 'flex-start', text: 'left', main: 'flex-start', origin: '0% 50%', gap: 'flex-start', items: 'flex-start', gbox: '0% 50%', ginner: 'calc(18px + 0.71em) 50%' }
-              : S.align === 'right' ? { list: 'flex-end', text: 'right', main: 'flex-end', origin: '100% 50%', gap: 'flex-end', items: 'flex-end', gbox: '100% 50%', ginner: 'calc(100% - 18px - 0.71em) 50%' }
-              : { list: 'center', text: 'center', main: 'center', origin: '50% 50%', gap: 'flex-start', items: 'flex-start', gbox: '0% 50%', ginner: 'calc(18px + 0.71em) 50%' };
+        /* ★ 第 51 轮：点团节距取整后，团心 = 18px + 0.15em + 1 个节距
+           （节距 = 0.3em 点径 + 间距，取整到整数 px；详见 index.html 的 .gap-breath）。
+           ⚠ 必须探测能力再决定表达式：round() 是较新的 CSS 函数（Chromium 106+），
+             把 round() 直接塞进变量值，在不支持的引擎里会让 transform-origin 变成
+             invalid-at-computed-value-time，**回落到初始值 50% 50%** ——
+             那比不改更糟（缩放锚到盒子中心，呼吸/放大时整团左右甩）。
+             不支持时退回第 50 轮的 0.6233em（口径正确，只是节距未取整）。 */
+        var ROUND_OK = !!(window.CSS && CSS.supports && CSS.supports('width', 'round(nearest, 1px, 1px)'));
+        var GAP_HALF = ROUND_OK ? 'calc(18px + 0.15em + round(nearest, 0.4733em, 1px))'
+                                : 'calc(18px + 0.6233em)';
+        var GAP_HALF_R = ROUND_OK ? 'calc(100% - 18px - 0.15em - round(nearest, 0.4733em, 1px))'
+                                  : 'calc(100% - 18px - 0.6233em)';
+        var A = S.align === 'left' ? { list: 'flex-start', text: 'left', main: 'flex-start', origin: '0% 50%', gap: 'flex-start', items: 'flex-start', gbox: '0% 50%', ginner: GAP_HALF + ' 50%' }
+              : S.align === 'right' ? { list: 'flex-end', text: 'right', main: 'flex-end', origin: '100% 50%', gap: 'flex-end', items: 'flex-end', gbox: '100% 50%', ginner: GAP_HALF_R + ' 50%' }
+              : { list: 'center', text: 'center', main: 'center', origin: '50% 50%', gap: 'flex-start', items: 'flex-start', gbox: '0% 50%', ginner: GAP_HALF + ' 50%' };
         setVar('--we-lyric-align', A.list);
         setVar('--we-text-align', A.text);
         setVar('--we-justify', A.main);
         setVar('--we-line-origin', A.origin);
         setVar('--we-gap-anchor', A.gap);
         setVar('--we-line-items', A.items);
-        /* 等待点的两个缩放原点也跟锚边走：盒子的展开放大（scale 1.55）和
-           内层呼吸（scale）如果永远从左缘长，右对齐时点在右缘，
+        /* 等待点的两个缩放原点也跟锚边走：盒子的展开回正（1.06 → 1）和
+           内层点团的呼吸/收尾放大（1 → 1.6）如果永远从左缘长，右对齐时点团在右缘，
            每一次呼吸/开合都会被甩出几十像素 —— 就是"左右乱飘"。 */
         setVar('--we-gap-box-origin', A.gbox);
         setVar('--we-gap-inner-origin', A.ginner);
@@ -626,7 +586,6 @@
         if (S.lineHeight === null) root.style.removeProperty('--we-lh');
         else setVar('--we-lh', String(S.lineHeight));
         /* ---- 字体（歌词 / 天际屏，作用范围由 fontTarget 决定） ---- */
-        syncFace();
         var stack = fontStack();
         if (stack && S.fontTarget !== 'art') setVar('--we-font', stack);
         else root.style.removeProperty('--we-font');
@@ -731,13 +690,20 @@
 
     var pct = function (v, dflt) { return num(v, dflt) / 100; };
 
-    window.wallpaperPropertyListener = {
-        applyUserProperties: function (p) {
+    var applyUserProperties = function (p) {
             var apiChanged = false;
 
             /* ---- 背景图片 ---- */
             if (p.bg_enable) S.bgOn = !!p.bg_enable.value;
-            if (p.bg_file) S.bgFile = p.bg_file.value || '';
+            if (p.bg_file) {
+                var bv = p.bg_file.value;
+                if (bv && typeof bv === 'object') bv = bv.value || bv.path || '';
+                S.bgFile = String(bv == null ? '' : bv);
+                /* 链路第一环可视化：收到值就让用户看见（无条件）。
+                   「选了图却毫无反应」时，这行能区分「没收到」还是「加载失败」。 */
+                bgDebugLine(S.bgFile ? '已收到自定义背景: ' + S.bgFile
+                                     : '已收到：自定义背景为空（默认律动背景）');
+            }
             if (p.bg_bright) S.bgBright = num(p.bg_bright.value, S.bgBright);
             if (p.bg_blur) S.bgBlur = num(p.bg_blur.value, S.bgBlur);
             if (p.bg_sat) S.bgSat = num(p.bg_sat.value, S.bgSat);
@@ -763,9 +729,8 @@
             if (p.lyric_pad) S.padX = num(p.lyric_pad.value, 6);
             if (p.lyric_line_height) S.lineHeight = num(p.lyric_line_height.value, 1.5);
             if (p.font_family) S.fontFamily = String(p.font_family.value || 'system');
-            if (p.font_custom) S.fontCustom = String(p.font_custom.value || '');
+            if (p.font_custom_on) S.fontCustomOn = !!p.font_custom_on.value;
             if (p.font_target) S.fontTarget = String(p.font_target.value || 'both');
-            if (p.font_file) S.fontFile = String(p.font_file.value || '');
             if (p.lyric_sweep) S.sweep = !!p.lyric_sweep.value;
             if (p.lyric_char_dim) S.charDim = pct(p.lyric_char_dim.value, 28);
             if (p.lyric_glow) S.glow = pct(p.lyric_glow.value, 100);
@@ -812,10 +777,13 @@
                 location.hash = 'weapi=' + encodeURIComponent(apiToken());
                 location.reload();
             }
-        },
+    };
 
+    window.wallpaperPropertyListener = {
+        applyUserProperties: applyUserProperties,
         applyGeneralProperties: function () { /* 壁纸引擎的全局项（fps 等）暂不需要 */ }
     };
+
 
     /* 音频频谱：壁纸引擎独有的能力，普通浏览器里这个函数不存在，自动跳过。
        拿到就立刻开始采集 —— 背景要跟着低频走，不能等到用户把「音频律动光晕」
@@ -837,8 +805,7 @@
         makeAudioLayer();
         apply();
 
-        /* lyrics.html 自己的 initBackPicture() 也在这一轮跑，它会覆盖 backgroundImage。
-         * 这里再补两次，保证「关掉背景图 / 换成自定义图」最终说了算。 */
+        /* 补两次同步：防止页面侧其它启动逻辑晚于我们覆盖背景状态。 */
         setTimeout(syncPhoto, 600);
         setTimeout(syncPhoto, 1600);
 

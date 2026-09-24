@@ -13,6 +13,8 @@
  *       同时落一份 fonts.json 备查。
  *
  *  装了新字体之后再跑一次即可刷新列表。
+ *  （2026-09-22 起字体规则：运行目录的 CustomFont.ttf/otf 优先于本列表；
+ *   本脚本只负责维护下拉列表本身。）
  *
  *  用法：
  *    node scan-fonts.js                 扫描并写入
@@ -20,6 +22,17 @@
  *    node scan-fonts.js --dir D:\fonts  额外扫描一个目录（可重复）
  * ========================================================================== */
 'use strict';
+
+/* ========================================================================
+ *  ⚠ 此脚本已停用（2026-09-22，字体规则改版）⚠
+ *  字体下拉固定为「通用 3 项 + 微软雅黑/等线/黑体」，不再把系统字体灌进列表；
+ *  想用某个具体字体：改名为 CustomFont.ttf / CustomFont.otf 放进本目录即可。
+ *  真要恢复：node scan-fonts.js --i-am-sure
+ * ======================================================================== */
+if (!process.argv.includes('--i-am-sure')) {
+    console.error('✖ scan-fonts.js 已停用：字体下拉固定为通用 3 项 + 微软雅黑/等线/黑体，具体字体请用 CustomFont.ttf/otf。');
+    process.exit(1);
+}
 
 const fs = require('fs');
 const path = require('path');
@@ -269,7 +282,6 @@ function scan(dirs) {
 const T = '\t';
 /* 前面的固定项：不改变字体 + 三个通用族 */
 const HEAD_OPTIONS = [
-    { label: '跟随原样式（不改变字体）', value: 'system' },
     { label: '通用 · 无衬线（sans-serif）', value: 'sans-serif' },
     { label: '通用 · 衬线（serif）', value: 'serif' },
     { label: '通用 · 等宽（monospace）', value: 'monospace' }
@@ -290,10 +302,14 @@ function buildOptions(fonts) {
 
 /* 精确替换 project.json 里某个键的整个对象块（保证其余字节一个不动） */
 function replaceBlock(text, key, build) {
-    const anchor = '"' + key + '": {';
-    const i = text.indexOf(anchor);
-    if (i < 0) throw new Error('project.json 里找不到 "' + key + '"');
-    let depth = 0, k = i + anchor.length - 1, inStr = false, esc = false;
+    /* 锚点不能写死 '"key": {' —— WE 编辑器会把 project.json 重排成
+       "key" : \r\n { 的格式（冒号两侧带空格、花括号在下一行）。
+       所以先按正则找键名，再以匹配到的那个 '{' 作为块起点。 */
+    const m = new RegExp('"' + key + '"\\s*:\\s*\\{').exec(text);
+    if (!m) throw new Error('project.json 里找不到 "' + key + '"');
+    const i = m.index;
+    const anchorLen = m[0].length;
+    let depth = 0, k = i + anchorLen - 1, inStr = false, esc = false;
     for (; k < text.length; k++) {
         const c = text[k];
         if (inStr) {
@@ -307,18 +323,18 @@ function replaceBlock(text, key, build) {
         else if (c === '}') { depth--; if (depth === 0) break; }
     }
     if (depth !== 0) throw new Error('"' + key + '" 的对象块括号不配对，project.json 可能被改坏了');
-    /* anchor 末尾那个 '{' 就是要替换的起点，k 是它配对的那个 '}' */
-    const start = i + anchor.length - 1;
+    /* 匹配到的 '{'（即 k 的初始值）就是要替换的起点，k 是它配对的那个 '}' */
+    const start = i + anchorLen - 1;
     return { text: text.slice(0, start) + build() + text.slice(k + 1), from: start, to: k + 1 };
 }
 
-function optionsText(opts, value) {
+function optionsText(opts, value, order) {
     const L3 = T.repeat(3), L4 = T.repeat(4);
     const lines = opts.map(function (o) {
         return L4 + '{ "label": ' + JSON.stringify(o.label) + ', "value": ' + JSON.stringify(o.value) + ' }';
     });
     return '{\n'
-        + L3 + '"order": 37,\n'
+        + L3 + '"order": ' + JSON.stringify(order === undefined ? 37 : order) + ',\n'
         + L3 + '"text": "字体（歌词 / 天际屏）",\n'
         + L3 + '"type": "combo",\n'
         + L3 + '"value": ' + JSON.stringify(value) + ',\n'
@@ -358,8 +374,11 @@ function main() {
     const prev = props.font_family.value || 'system';
     /* 原来选的字体如果还在列表里就保留，否则回到「跟随原样式」，
        免得壁纸引擎里那一项变成空白 */
-    const keep = opts.some(o => o.value === prev) ? prev : 'system';
-    if (keep !== prev) console.log('注意：原来选的「' + prev + '」已不在列表中，已回到「跟随原样式」');
+    /* 原选择不在列表里时，落到第一个真实字体（列表按「中文优先」排序，
+       通用三项在最前面，跳过它们） */
+    const firstReal = (opts.find(o => o.value !== 'sans-serif' && o.value !== 'serif' && o.value !== 'monospace') || opts[opts.length - 1]).value;
+    const keep = opts.some(o => o.value === prev) ? prev : firstReal;
+    if (keep !== prev) console.log('注意：原来选的「' + prev + '」已不在列表中，已改选「' + firstReal + '」');
 
     if (dry) {
         console.log('\n（--dry 模式，没有写文件）前 12 项：');
@@ -367,7 +386,11 @@ function main() {
         return;
     }
 
-    const next = replaceBlock(raw, 'font_family', function () { return optionsText(opts, keep); }).text;
+    /* 字体属性在面板里的位置（order）跟随工程现状，不写死 ——
+       之前硬编码 37，重跑一次就会把面板顺序改掉 */
+    const prevOrder = (props.font_family && typeof props.font_family.order === 'number')
+        ? props.font_family.order : 37;
+    const next = replaceBlock(raw, 'font_family', function () { return optionsText(opts, keep, prevOrder); }).text;
     JSON.parse(next);                                     /* 写之前再验一次 */
     fs.writeFileSync(PROJECT, next);
 
