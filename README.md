@@ -7,13 +7,6 @@
 **导入WallpaperEngine教程：
   打开WallpapaerEngine，点击壁纸编辑器，创建壁纸，然后选择文件中的index.html,会自动选中所有所需文件（请保证文件夹中只有本项目中的文件），然后左上角点击保存，就能在壁纸引擎中使用啦！
 
-**作者本人已上传此项目到壁纸引擎，链接：https://steamcommunity.com/sharedfiles/filedetails/?id=3805744669
-**作者BiliBili主页：https://space.bilibili.com/330110028
+**作者本人已上传此项目到壁纸引擎，链接：https://steamcommunity.com/sharedfiles/filedetails/?id=3805744669（已隐藏或无权限代表更新还没通过审核，请耐心等待）
 
-引用及参考开源项目：
-1. @Steve-xmh applemusic-like-lyrics https://github.com/Steve-xmh/applemusic-like-lyrics - 参考了歌词背景的动态流动效果
-2. @shuding liquid-glass https://github.com/shuding/liquid-glass - 参考了液态玻璃效果实现
-
-有bug待修复： 
-1.切歌时，歌词有概率不会切换，仍为上一首歌的歌词
-2.将歌词设置为（左对齐、右对齐）时，歌词收回动画曲线不正常
+# 欢迎反馈BUG！
