@@ -10,11 +10,11 @@
  *    3. 告诉你接下来在引擎里怎么点
  *
  *  用法：
- *      node install-to-we.js                    # 默认名字 GLyricsImmersive
- *      node install-to-we.js 我的歌词壁纸        # 自定义工程目录名
- *      node install-to-we.js --list             # 只列出候选安装位置，不复制
- *      node install-to-we.js --target "D:\path\to\wallpaper_engine"
- *      node install-to-we.js --no-scan          # 不刷新字体列表，直接装
+ *      node tools/setup/install-to-we.js              # 默认名字 GLyricsImmersive
+ *      node tools/setup/install-to-we.js 我的歌词壁纸  # 自定义工程目录名
+ *      node tools/setup/install-to-we.js --list       # 只列出候选安装位置，不复制
+ *      node tools/setup/install-to-we.js --target "D:\path\to\wallpaper_engine"
+ *      node tools/setup/install-to-we.js --no-scan    # 不刷新字体列表，直接装
  *
  *  重复执行是安全的：会先清掉目标目录再整体复制。
  */
@@ -32,7 +32,7 @@
  * ======================================================================== */
 if (!process.argv.includes('--i-am-sure')) {
     console.error('✖ install-to-we.js 已停用：本目录就是 WE 工程本体，直接修改这里的文件即可。');
-    console.error('  （确实要恢复旧的两步安装流程：node install-to-we.js --i-am-sure）');
+    console.error('  （确实要恢复旧的两步安装流程：node tools/setup/install-to-we.js --i-am-sure）');
     process.exit(1);
 }
 
@@ -40,7 +40,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const SRC = __dirname;
+const SRC = path.join(__dirname, '..', '..');   // 工程根目录（本脚本在 tools/setup/ 下）
 const DEFAULT_NAME = 'GLyricsImmersive';
 
 /* 要被复制过去的东西。index.html 是入口，其余是它的依赖。 */
@@ -132,10 +132,10 @@ function main() {
 
     /* 字体下拉列表是「扫出来的」，装机之前先刷一次，免得带过去一份旧清单。
        扫描失败不算致命（比如换了台机器路径不对），照常安装。 */
-    if (argv.indexOf('--no-scan') < 0 && fs.existsSync(path.join(SRC, 'scan-fonts.js'))) {
+    if (argv.indexOf('--no-scan') < 0 && fs.existsSync(path.join(__dirname, 'scan-fonts.js'))) {
         try {
             require('child_process').execFileSync(process.execPath,
-                [path.join(SRC, 'scan-fonts.js')], { cwd: SRC, stdio: 'inherit' });
+                [path.join(__dirname, 'scan-fonts.js')], { cwd: SRC, stdio: 'inherit' });
         } catch (e) {
             console.log('（字体扫描失败，继续安装：' +
                 (e && e.message ? e.message.split('\n')[0] : e) + '）');
@@ -154,7 +154,7 @@ function main() {
         }
         if (listOnly) return;
         console.error('\n✖ 没找到壁纸引擎。用 --target 指定，例如：\n' +
-            '  node install-to-we.js --target "D:\\SteamLibrary\\steamapps\\common\\wallpaper_engine"');
+            '  node tools/setup/install-to-we.js --target "D:\\SteamLibrary\\steamapps\\common\\wallpaper_engine"');
         process.exit(2);
     }
 

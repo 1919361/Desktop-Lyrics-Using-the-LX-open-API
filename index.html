@@ -22,8 +22,14 @@
                （列表变高 → 容器变高 → padding 更大 → 抖动/飞走）。
                100vh 对支持 inset 的内核无副作用（结果相同）。 */
             height: 100vh;
-            display: flex;
-            flex-direction: column;
+            /* 屏幕按中线分左右两半：左 = 播放控件区，右 = 歌词区。
+               用 1fr 1fr 而不是 50% 50% —— fr 会先扣掉两侧内容的最小宽度再等分，
+               长歌名 / 长歌词都不会把某一列挤歪；两列各自 min-width:0。
+               背景层（bg-photo / bg-shader / bg-art-layer）都是 absolute，
+               不参与网格布局，仍然铺满整屏。 */
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 100%;
             overflow: hidden;
             /* 兜底底色：**只在线性方向上**从深蓝灰收到近黑。
                以前这里是 radial-gradient + `transition: background 2s` ——
@@ -141,13 +147,17 @@
             background: #7fb4ff;
         }
 
-        /* ===== 背景艺术字层 ===== */
+        /* ===== 天际屏（背景艺术字）=====
+           ★ 层级：背景图 / 动态背景 (0) < 专辑封面与播放控件 (1) < **天际屏 (2)** < 歌词 (3)。
+             也就是"单个字悬浮"这一层压在封面和播放控件之上、又在歌词之下 ——
+             它永远不会盖住正在读的歌词，但会从专辑封面上飘过（用户指定）。
+             pointer-events:none 保证它不吃任何点击。 */
         .bg-art-layer {
             position: absolute;
             inset: 0;
             overflow: hidden;
             pointer-events: none;
-            z-index: 1;
+            z-index: 2;
         }
         /* 每一句的背景字各自成批放在一个容器里：
            换句时新批可以立刻建（这样"唱到哪段才浮现哪段"的时刻才准），
@@ -199,313 +209,227 @@
             font-weight: 600;
         }
 
-        /* ===== 底部悬浮播放控件（iOS 26 Liquid Glass）=====
-           整块「悬浮」：脱离文档流、四周留白、投影离地，视觉上浮在歌词之上；
-           因为不再占用布局高度，#lyricScroll 依旧拿满整屏，
-           当前歌词行仍然落在屏幕几何中心，既有滚动/居中逻辑一行不用改。
-           .dock-wrap 只负责定位与「连接状态贴右下角」，玻璃本体是 .player-dock。 */
-        .dock-wrap {
-            position: absolute;
-            left: 50%;
-            /* 玻璃本体距屏幕底 = --dock-lift + 状态条高 + 间隙。
-               64 + 28 + 9 ≈ 101px：浮在下方留白里，不压歌词也不贴任务栏。 */
-            --dock-lift: 64px;
-            bottom: calc(var(--dock-lift) + env(safe-area-inset-bottom, 0px));
-            transform: translateX(-50%);
-            z-index: 12;
-            display: flex;
-            flex-direction: column;
-            align-items: flex-end;          /* 状态条靠右 = 贴玻璃右下角 */
-            gap: 9px;
-            width: min(1120px, calc(100vw - 48px));
-            pointer-events: none;           /* 只有玻璃本体与状态条吃指针事件 */
+        /* ===== 左半屏：播放控件区（Apple Music 式竖排）=====
+           屏幕按中线分两半，这一列占左半屏。竖排顺序（与 DOM 一致）：
+               封面  →  歌名 / 歌手  →  进度条  →  播放控件（纯图标行）  →  状态小条
+           封面是唯一的视觉焦点：整列的宽度**由封面决定**，歌名、进度、
+           控件条都各自铺满这条宽度 —— 于是「歌名左对齐封面」不是靠 offset，
+           而是同一条左缘，窗口怎么变都对齐。
 
-            /* 圆角按 Apple HIG「同心圆角」成套给出：内层 = 外层 − 间距。
-               改外层半径时内层自动跟随，不会出现「大圆角里塞个小圆角」的错位。
-               ① .player-dock  : r-glass            （贴边）
-               ② .player-bar   : r-glass − pad      （内缩 pad）
-               ③ .album-art    : r-glass − pad      （内缩 pad，与 ② 同心）
-               ④ 圆形/胶囊件（按钮、圆点、细轨）本就用 50% / 999px，天然对齐 */
+           为什么不再用「悬浮在底部的胶囊」：
+           胶囊要横向塞下封面 + 歌名 + 进度 + 按钮，封面的尺寸被挤压到 52px，
+           视觉重心必然是那根条子；Apple Music 的做法相反 —— 封面占大头，
+           信息与控制沿一条竖轴往下排。 */
+
+        .player-col {
+            position: relative;
+            z-index: 1;                  /* 层级：背景 0 < 播放区 1 < 天际屏 2 < 歌词 3 */
+            display: flex;
+            align-items: center;         /* 整列垂直居中 */
+            /* ★ 参照 Apple Music 的构图：整块**靠向画面中线**，不是贴在左边缘。
+               左边留白 ≈ 3vw、右边留白 ≈ 6.3vw（这一侧就是"封面到歌词"的那段距离）。
+               这样封面右缘离歌词只剩一百多像素，中间不再是一大片空白。 */
+            justify-content: flex-end;
+            min-width: 0;
+            min-height: 0;
+            padding: clamp(16px, 2.8vh, 48px) clamp(16px, 3.2vw, 76px)
+                     clamp(16px, 2.8vh, 48px) clamp(16px, 3vw, 60px);
+            pointer-events: none;        /* 只有控件行与状态条吃指针事件 */
+
+            /* 收藏按钮的圆角（面板里的「圆角」滑条已删除，这里固定 13px，
+               视觉上略小于半高，和参照图那颗圆角方块一致）。 */
             --r-glass: 26px;
-            --pad-glass: 10px;
-            --r-inner: calc(var(--r-glass) - var(--pad-glass));
+
+            /* 控件整体大小（WE 的 ui_scale）。**不用 transform 缩放整列** ——
+               那样一旦 >1 就会压到右半屏的歌词上。这里只把它当"尺码系数"
+               参与宽度/字号/间距的 calc，布局自身随尺寸重排，永远留在左半屏内。 */
+            --np-u: 1;
         }
 
-        /* 指针位置 → 玻璃高光的位置。
-           注册成 <length-percentage> 才能把 px 值直接喂进渐变（未注册的 var 会被当成裸字符串，
-           在 radial-gradient 的 at 位置上不一定合法）。 */
-        @property --mx { syntax: '<length-percentage>'; inherits: true; initial-value: 50%; }
-        @property --my { syntax: '<length-percentage>'; inherits: true; initial-value: 50%; }
+        /* 竖排容器：宽度 = 封面宽度，所有子项都铺满它 */
+        .np-inner {
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            /* ★ 间距全部由各段自己的 margin-top 给，不用统一的 gap ——
+               参照图里"封面→标题"比"标题→歌手"宽得多，统一 gap 做不出这个节奏。 */
+            gap: 0;
+            width: 100%;
+            /* 封面 = min(31.25vw, 55.5vh)：这正是参照图里那张 800×800 封面在
+               2560×1440 上的比例（31.25% 宽 / 55.5% 高，16:9 下两者恰好相等）。
+               换成 1920×1080 就是 600×600。--np-u 是面板的"整体大小"倍率。 */
+            max-width: min(calc(34vw * var(--np-u)),
+                           calc(60vh * var(--np-u)),
+                           calc(100% * var(--np-u)));
+            /* 「离底部再抬高」在竖排布局里改成"整列上移"，语义仍然是微调位置 */
+            transform: translateY(calc(-1 * var(--we-lift, 0px)));
+        }
 
+        /* 封面：占主要视觉焦点。img 绝对定位铺满，加载成功才 .visible */
+        .np-art {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            border-radius: clamp(10px, 1.6vh, 22px);
+            overflow: hidden;
+            background:
+                radial-gradient(120% 120% at 30% 0%,
+                    rgba(255, 255, 255, 0.10) 0%,
+                    rgba(255, 255, 255, 0.03) 55%,
+                    rgba(255, 255, 255, 0.055) 100%);
+            box-shadow:
+                0 34px 70px -22px rgba(0, 0, 0, 0.92),
+                0 8px 22px -8px rgba(0, 0, 0, 0.6),
+                0 0 0 1px rgba(255, 255, 255, 0.10),
+                inset 0 1px 0 rgba(255, 255, 255, 0.16);
+        }
+        /* 没有封面时的占位：一个很淡的 ♪，比留一块空壳体面 */
+        .np-art::after {
+            content: '♪';
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: calc(4.6rem * var(--np-u));
+            line-height: 1;
+            color: rgba(255, 255, 255, 0.13);
+            pointer-events: none;
+        }
+        .np-art.has-art::after { content: none; }
+
+        /* ===== 控件行：纯图标，没有任何底板 =====
+           这一行就是三个图标组排在一行：左（音量）、中（上一首/播放/下一首）、右（收藏）。
+           没有底色、没有描边、没有投影、没有背景滤镜 —— 之前那套液态玻璃
+           （棱环 / 彩边 / 跟随指针的高光 / 暗纱 / SVG 折射）已整套删除。
+           左右各留 14px 再用负 margin 抵消：图标本身仍与封面上下缘严格对齐，
+           但点击热区比视觉范围略宽，好按。 */
         .player-dock {
             position: relative;
             z-index: 1;
             display: flex;
             align-items: center;
-            gap: 20px;
-            width: 100%;
-            /* 内边距四周等距 —— 同心圆角的前提：内外层间距处处相等才算"对齐" */
-            padding: var(--pad-glass);
-            border-radius: var(--r-glass);
+            padding: 6px 14px;
+            margin: clamp(12px, 2vh, 26px) -14px 0;
+            width: calc(100% + 28px);
+            border-radius: 0;
             color: #fff;
-            /* ===== 真·液态玻璃（参照 iOS 26 Liquid Glass）=====
-               与毛玻璃的本质区别：**中心是"透"的、边缘是"折"的**。
-               ① 中心：**无 blur**（按需求整个删掉）—— 背景从玻璃里透出来是
-                  清晰的，靠下面加深的底色层保住文字可读性；饱和度拉高把
-                  透出来的色彩"活化"；
-               ② 边缘：位移折射由 attachLiquidGlass 的 SVG 滤镜负责（行内
-                  样式，悬停/idle 同一条，无切换）；::after 那圈低饱和彩虹
-                  色散（screen 混合）即苹果那道彩边；
-               ③ 厚度：inset 高光/暗部做出 1~2px 的"玻璃棱"，顶亮底沉。 */
-            background:
-                linear-gradient(180deg,
-                    rgba(255, 255, 255, 0.075) 0%,
-                    rgba(255, 255, 255, 0) 40%),
-                linear-gradient(135deg,
-                    rgba(255, 255, 255, 0.115) 0%,
-                    rgba(255, 255, 255, 0.035) 42%,
-                    rgba(255, 255, 255, 0.075) 100%),
-                rgba(9, 11, 18, 0.36);
-            backdrop-filter: saturate(1.9) brightness(1.06);
-            -webkit-backdrop-filter: saturate(1.9) brightness(1.06);
-            box-shadow:
-                inset 0 1px 0 rgba(255, 255, 255, 0.55),
-                inset 0 -1px 1px rgba(255, 255, 255, 0.13),
-                inset 0 0 0 1px rgba(255, 255, 255, 0.08),
-                inset 0 0 34px rgba(255, 255, 255, 0.045),
-                inset 0 -16px 28px -18px rgba(150, 190, 255, 0.34),
-                0 20px 46px rgba(0, 0, 0, 0.42),
-                0 3px 10px rgba(0, 0, 0, 0.24);
+            background: none;
+            box-shadow: none;
             pointer-events: auto;
-            isolation: isolate;             /* 内部高光的 screen 混合只作用在玻璃内部 */
-            transform: translate3d(0, 0, 0);
-            /* 入场只动 transform（上滑 + 微缩放），**不动画 opacity**：
-               液态玻璃折射 + 元素半透明 = 重影（见下面"变淡"的说明），
-               而且运行期玻璃 opacity 恒为 1，没有任何状态需要过渡它。
-               另外把拖拽相关的浏览器默认行为关掉：
-               拖动进度条/音量条时不会选中文字、也不会拖出一个原生拖影 */
             animation: dockIn 0.9s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+            /* 拖音量条时不会选中文字、也不会拖出原生拖影 */
             -webkit-user-select: none;
             user-select: none;
             -webkit-user-drag: none;
+            transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
         @keyframes dockIn {
             from { transform: translate3d(0, 16px, 0) scale(0.985); }
             to   { transform: translate3d(0, 0, 0) scale(1); }
         }
 
-        /* ===== 变淡：指针不在控件上就淡下去 =====
-           判定只看一件事 —— 指针是否落在播放控件 / 连接状态条内（命中就由 JS 摘掉 .dock-wrap 的 .idle）。
-           ⚠ 变淡**不能**再动 .player-dock 本身的 opacity：
-             液态玻璃折射（backdrop-filter: url(#svg)）+ 元素半透明时，
-             未被位移的原始背景会以 (1-opacity) 透出来，和位移后的折射层
-             叠成两个影子（一个字两份像）。所以玻璃元素 opacity 恒为 1，
-             "变淡"拆到三层各自独立做，悬停/idle 用的是**同一套折射**，无切换：
-             ① 内容（信息/进度/按钮）正常淡出 —— 主要的"退后"观感；
-             ② 玻璃体内一层 .dock-dim 暗纱压暗玻璃面（纯色层，不碰滤镜）；
-             ③ 边缘棱环 ::before / 彩环 ::after 淡掉 —— 棱边不再抢眼。
+        /* ===== 变淡：指针不在控件上就淡下去（面板里可关，默认关）=====
+           控件行已经没有底板，所以"变淡"就是图标整体淡出，不再有玻璃面要处理。
            快慢两头分开：淡下去 0.55s（慢，别闪），亮回来 0.3s（快，跟手）。 */
-        .player-dock > :not(.dock-dim) { transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
-        .dock-wrap.idle .player-dock > :not(.dock-dim) { opacity: 0.42; transition-duration: 0.55s; }
-        .dock-wrap.idle .player-dock::before,
-        .dock-wrap.idle .player-dock::after { opacity: 0.22; }
-        .dock-wrap.idle .conn-bar { opacity: 0.5; transition-duration: 0.55s; }
-        /* 淡下去的时候把"自主游走"的光池也停掉：看不见的东西不必继续每帧合成 */
-        .dock-wrap.idle .lg-sheen .s-drift { animation-play-state: paused; }
-
-        /* 玻璃体的"暗纱"：idle 变淡时压暗玻璃面。纯色层、无任何滤镜 ——
-           它变透明只会露出"被折射过的玻璃面"，绝不会露出原始背景，无重影。 */
-        .dock-dim {
-            position: absolute;
-            inset: 0;
-            z-index: 0;                 /* 与 .lg-sheen 同层，DOM 排在其后 → 压在高光上、在内容下 */
-            border-radius: inherit;
-            background: #04060b;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .dock-wrap.idle .dock-dim { opacity: 0.45; transition-duration: 0.55s; }
-
-        /* 玻璃棱边：mask 抠出 1px 环再填斜向渐变 —— 光沿边缘走，而不是一圈死白 */
-        .player-dock::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            z-index: 3;
-            border-radius: inherit;
-            padding: 1px;
-            background: linear-gradient(140deg,
-                rgba(255, 255, 255, 0.66) 0%,
-                rgba(255, 255, 255, 0.10) 26%,
-                rgba(255, 255, 255, 0.02) 54%,
-                rgba(255, 255, 255, 0.30) 82%,
-                rgba(255, 255, 255, 0.52) 100%);
-            -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-            -webkit-mask-composite: xor;
-            mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-            mask-composite: exclude;
-            pointer-events: none;
-        }
-
-        /* ===== 彩边（色散环）=====
-           只做颜色、不做滤镜：之前这圈还叠了 backdrop 提亮（饱和/对比突变），
-           环内外色调一跳，就是一条明显的"折射边界"。折射已全部交给
-           attachLiquidGlass 的 SVG 位移场（平滑渐入），这里只保留沿边一圈
-           低饱和彩虹 + 斜向白高光，透明度压低 —— 是"棱镜边"而不是"描边"。 */
-        .player-dock::after {
-            content: '';
-            position: absolute;
-            inset: 0;
-            z-index: 3;
-            border-radius: inherit;
-            padding: 2.5px;
-            background:
-                conic-gradient(from 210deg at 50% 46%,
-                    rgba(255, 148, 148, 0.5), rgba(255, 224, 148, 0.42),
-                    rgba(148, 255, 190, 0.4), rgba(148, 214, 255, 0.46),
-                    rgba(190, 148, 255, 0.42), rgba(255, 148, 218, 0.44),
-                    rgba(255, 148, 148, 0.5)),
-                linear-gradient(140deg,
-                    rgba(255, 255, 255, 0.75) 0%,
-                    rgba(255, 255, 255, 0.08) 34%,
-                    rgba(255, 255, 255, 0.04) 58%,
-                    rgba(255, 255, 255, 0.34) 100%);
-            -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-            -webkit-mask-composite: xor;
-            mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-            mask-composite: exclude;
-            mix-blend-mode: screen;
-            opacity: 0.42;
-            pointer-events: none;
-        }
-
-        /* 液态高光：一团跟着指针走，一团自己缓慢游走。
-           两团都只用 transform / 背景位置，不参与布局，也不会推动里面的文字。 */
-        .lg-sheen {
-            position: absolute;
-            inset: 0;
-            z-index: 0;
-            border-radius: inherit;
-            overflow: hidden;
-            pointer-events: none;
-            mix-blend-mode: screen;
-        }
-        .lg-sheen i {
-            position: absolute;
-            left: 0;
-            top: 0;
-            display: block;
-            width: 100%;
-            height: 100%;
-        }
-        /* 跟随指针的高光（--mx/--my 由 JS 每帧写入，单位 px） */
-        .lg-sheen .s-follow {
-            background: radial-gradient(190px 105px at var(--mx, 50%) var(--my, 50%),
-                rgba(255, 255, 255, 0.30), rgba(255, 255, 255, 0) 72%);
-            opacity: 0;
-            transition: opacity 0.45s ease;
-        }
-        .player-dock:hover .lg-sheen .s-follow { opacity: 1; }
-        /* 自主游走的冷调光池：给静态画面留一点"液态"的呼吸。
-           注意光池必须完全落在这一层自己的盒子里 —— 半径 26% × 透明点 70% ≈ 18%，
-           而平移只有 ±11%（×scale 1.06 后 ≈ ±19%），所以整层左右平移时
-           盒子边缘始终是全透明的，不会把一条硬边扫出来。 */
-        .lg-sheen .s-drift {
-            background: radial-gradient(26% 130% at 50% 50%,
-                rgba(178, 208, 255, 0.22), rgba(178, 208, 255, 0) 70%);
-            will-change: transform;
-            animation: lgDrift 19s ease-in-out infinite;
-        }
-        @keyframes lgDrift {
-            0%   { transform: translate3d(-11%, 0, 0) scale(0.94); }
-            50%  { transform: translate3d(11%, 0, 0) scale(1.06); }
-            100% { transform: translate3d(-11%, 0, 0) scale(0.94); }
-        }
+        .player-col.idle .player-dock { opacity: 0.42; transition-duration: 0.55s; }
+        .player-col.idle .conn-bar { opacity: 0.5; transition-duration: 0.55s; }
         @media (prefers-reduced-motion: reduce) {
-            .lg-sheen .s-drift { animation: none; }
             .player-dock { animation: none; }
         }
 
-        /* 封面 + 歌名 + 歌手
-           （position/z-index：把内容提到 .lg-sheen 高光层之上，高光只铺在玻璃面上） */
-        .pd-info {
+        /* ===== 歌名 / 歌手（封面下方，左对齐封面左缘）=====
+           间距取自参照图：封面底 → 歌名顶 = 2.9vh，歌名底 → 歌手顶 = 0.7vh。
+           字号按「封面宽度的百分比」反推（参照图里标题高 ≈ 封面宽度的 3.2%），
+           所以窗口怎么缩放，字与封面的比例都不变。 */
+        .np-meta {
             position: relative;
             z-index: 1;
             display: flex;
-            align-items: center;
-            gap: 14px;
-            flex: 0 1 auto;
+            flex-direction: column;
+            gap: clamp(2px, 0.7vh, 10px);
             min-width: 0;
-            max-width: 32%;
+            margin-top: clamp(18px, 2.9vh, 42px);
+            padding-left: 2px;          /* 视觉上让字与封面左缘"贴齐"而不是压线 */
         }
 
+        .track-name {
+            font-size: clamp(1.06rem, calc(0.72vw + 0.66rem) * var(--np-u, 1), 1.8rem);
+            font-weight: 700;
+            line-height: 1.2;
+            letter-spacing: -0.012em;
+            color: rgba(255, 255, 255, 0.96);
+            /* 长歌名换行而不是省略：竖排布局里有的是竖向空间，截断反而更难认 */
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            overflow-wrap: anywhere;
+            text-shadow: 0 2px 12px rgba(0, 0, 0, 0.55);
+        }
+        .track-singer {
+            font-size: clamp(0.82rem, calc(0.3vw + 0.62rem) * var(--np-u, 1), 1.12rem);
+            font-weight: 400;
+            line-height: 1.35;
+            color: rgba(255, 255, 255, 0.62);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
+        }
+
+        /* 封面：铺满 .np-art，加载成功后 .visible 淡入放大（transform 只在 img 上，
+           不参与布局，所以不会把下面的歌名顶开） */
         .album-art {
-            width: 52px;
-            height: 52px;
-            /* 与玻璃同心：26 − 10 = 16。封面是离玻璃左缘最近的圆角件，
-               半径不同心时那圈弧线会明显"各转各的" */
-            border-radius: var(--r-inner);
-            background: rgba(255, 255, 255, 0.08);
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: inherit;
             object-fit: cover;
             display: block;
             opacity: 0;
-            transform: scale(0.9);
+            transform: scale(1.05);
             transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
-                        transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
-            flex-shrink: 0;
+                        transform 1.2s cubic-bezier(0.16, 1, 0.3, 1);
         }
         .album-art.visible {
             opacity: 1;
             transform: scale(1);
         }
 
-        .track-meta {
-            display: flex;
-            flex-direction: column;
-            gap: 3px;
-            min-width: 0;
-        }
-
-        .track-name {
-            font-size: 0.98rem;
-            font-weight: 500;
-            color: rgba(255, 255, 255, 0.9);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
-        }
-        .track-singer {
-            font-size: 0.8rem;
-            font-weight: 300;
-            color: rgba(255, 255, 255, 0.55);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
         /* ===== 进度条（可拖动定位）=====
-           --p（0~1）是唯一进度来源：填充走 scaleX(var(--p))，滑块走 left:calc(var(--p)*100%)，
-           两者共用一个自定义属性，每帧只写一次样式 —— 逻辑上不可能不同步，
-           也不需要每帧读一次 offsetWidth（读宽度会触发同步重排）。 */
+           --p（0~1）是唯一进度来源：填充用 clip-path 裁到 --p，位置指示就是填充的右端圆角
+           （没有圆点滑块）。每帧只写一次自定义属性，读宽度会触发同步重排，所以从来不读。
+           位置：歌名/歌手下方、控件条上方，宽度与封面同宽。 */
         .track-progress {
             position: relative;
             z-index: 1;
             display: flex;
             align-items: center;
             gap: 12px;
-            flex: 1 1 auto;
-            min-width: 160px;
+            flex: 0 0 auto;
+            width: 100%;
+            min-width: 0;
+            /* 容器本身不吃指针（两端的时间数字不该被点到），
+               真正接事件的是下面 .track-progress-track 的 pointer-events:auto。
+               ⚠ 这一条不是可有可无的：整列 .player-col 是 pointer-events:none
+                 （只让控件行吃事件），而进度条是控件行的**兄弟节点**、不在控件行里 ——
+                 指针事件会一路继承成 none，"拖不动"就是这么来的。 */
+            pointer-events: none;
+            /* 关掉文字选择，免得拖动时把两端的数字选蓝 */
+            -webkit-user-select: none;
+            user-select: none;
+            /* 歌手底 → 进度条：参照图 23px/1440 ≈ 1.6vh */
+            margin-top: clamp(10px, 1.6vh, 22px);
             --p: 0;
         }
         .track-progress-time {
             flex: 0 0 auto;
-            min-width: 46px;
-            font-size: 0.74rem;
+            min-width: 42px;
+            font-size: clamp(0.68rem, 0.78rem * var(--np-u, 1), 0.95rem);
             font-weight: 400;
-            color: rgba(255, 255, 255, 0.62);
+            color: rgba(255, 255, 255, 0.66);
             font-variant-numeric: tabular-nums;
             letter-spacing: 0.3px;
             white-space: nowrap;
@@ -515,13 +439,17 @@
         .track-progress-time.right { text-align: right; }
         .track-progress.seeking .track-progress-time { color: rgba(255, 255, 255, 0.95); }
 
-        /* 轨道：外层 26px 是命中区，视觉上的细轨由 ::before 画，hover/拖动时变粗 */
+        /* 轨道：26px 的命中区（拖得动是关键），视觉上的轨由 ::before 画，
+           常态 **9px**（原 4px 的两倍多），hover / 拖动时涨到 12px。
+           ★ pointer-events:auto 是整条链路的关键：父级继承下来的是 none，
+             只有在这里显式打开，pointerdown / 拖动才收得到。 */
         .track-progress-track {
             position: relative;
             flex: 1 1 auto;
             height: 26px;
             min-width: 80px;
             cursor: pointer;
+            pointer-events: auto;
             touch-action: none;
         }
         .track-progress-track::before {
@@ -530,63 +458,61 @@
             left: 0;
             right: 0;
             top: 50%;
-            height: 5px;
-            margin-top: -2.5px;
-            border-radius: 4px;
-            background: rgba(255, 255, 255, 0.18);
-            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+            height: 9px;
+            margin-top: -4.5px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.22);
+            box-shadow: none;
             transition: height 0.18s ease, margin-top 0.18s ease, background-color 0.18s ease;
         }
         .track-progress:hover .track-progress-track::before,
         .track-progress.seeking .track-progress-track::before {
-            height: 8px;
-            margin-top: -4px;
-            background: rgba(255, 255, 255, 0.24);
+            height: 12px;
+            margin-top: -6px;
+            background: rgba(255, 255, 255, 0.28);
         }
-        /* 填充用 scaleX 而不是 width：不触发布局，只走合成线程 */
+        /* 填充：整条铺满，再用 clip-path 裁到进度位置。
+           ⚠ 不能用 transform: scaleX(--p)：缩放会把圆角**横向压扁** ——
+             进度小的时候右端直接变成方角、左端半径也一直在变，
+             看起来就是"圆角被截断 / 方一块圆一块"。
+           clip-path 的 round 半径和 border-radius 一样会自动收敛到半高，
+             所以常态 9px 与 hover 12px 两种高度下，两端都是完整的圆角。
+           ★ 没有圆点滑块了：位置就由这条填充的**右端圆角**表示（与轨道边缘同形）。 */
         .track-progress-fill {
             position: absolute;
             left: 0;
             right: 0;
             top: 50%;
-            height: 5px;
-            margin-top: -2.5px;
-            border-radius: 4px;
-            background: linear-gradient(90deg, rgba(255, 255, 255, 0.72), #ffffff);
-            transform: scaleX(var(--p, 0));
-            transform-origin: 0 50%;
-            will-change: transform;
+            height: 9px;
+            margin-top: -4.5px;
+            border-radius: 999px;
+            background: linear-gradient(90deg, rgba(255, 255, 255, 0.82), #ffffff);
+            clip-path: inset(0 calc(100% - var(--p, 0) * 100%) 0 0 round 999px);
             pointer-events: none;
             transition: height 0.18s ease, margin-top 0.18s ease;
         }
         .track-progress:hover .track-progress-fill,
         .track-progress.seeking .track-progress-fill {
-            height: 8px;
-            margin-top: -4px;
-        }
-        .track-progress-thumb {
-            position: absolute;
-            top: 50%;
-            left: calc(var(--p, 0) * 100%);
-            width: 11px;
-            height: 11px;
-            margin: -5.5px 0 0 -5.5px;
-            border-radius: 50%;
-            background: #fff;
-            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.5);
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.18s ease, width 0.16s ease, height 0.16s ease, margin 0.16s ease;
-        }
-        .track-progress:hover .track-progress-thumb,
-        .track-progress.seeking .track-progress-thumb { opacity: 1; }
-        .track-progress.seeking .track-progress-thumb {
-            width: 15px;
-            height: 15px;
-            margin: -7.5px 0 0 -7.5px;
+            height: 12px;
+            margin-top: -6px;
         }
         /* 还没有歌曲（时长未知）时不可拖 */
         .track-progress.disabled { pointer-events: none; opacity: 0.45; }
+        .track-progress.disabled .track-progress-track { cursor: default; }
+
+        /* ===== 右半屏：歌词列 =====
+           只负责"占住右半屏 + 让滚动容器拿到可用高度"。
+           ★ 左内边距比右侧多一点：中线处留一条呼吸缝，长句放大（2 倍）时
+             也不会正好顶到屏幕正中线上、和左边的进度条/控件条挤在一起。 */
+        .lyric-col {
+            position: relative;
+            z-index: 3;                    /* 层级最高：歌词永远压在天际屏之上 */
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            min-height: 0;
+            padding: clamp(10px, 1.6vw, 30px) 0 clamp(10px, 1.6vw, 30px) clamp(12px, 2.4vw, 52px);
+        }
 
         /* ===== 歌词滚动区域 ===== */
         .lyric-scroll {
@@ -601,7 +527,9 @@
             min-height: 0;
             overflow-y: auto;
             overflow-x: hidden;
-            padding: 0 6%;
+            /* 左右留白（WE 面板的「左右留白」）：左对齐后右侧留白只影响长句换行宽度，
+               左缘由 .lyric-col 的内边距决定，两者不冲突。 */
+            padding: 0 var(--we-pad-x, 6%) 0 var(--we-pad-x, 6%);
             scrollbar-width: none;
             -ms-overflow-style: none;
             position: relative;
@@ -612,7 +540,10 @@
         .lyric-list {
             display: flex;
             flex-direction: column;
-            align-items: center;
+            /* ★ 固定左对齐：整列歌词的左缘贴同一条竖线（不再有居中 / 右对齐）。
+               每行是 inline-flex、宽度收缩到文字宽，所以 align-items:flex-start
+               就是"所有行的左缘对齐"，长句换行后的短行也不会飘回中间。 */
+            align-items: flex-start;
             width: 100%;
             /* 滚动位移由 JS 用 WAAPI 驱动 transform，保持提升可避免每次换行
                重新提升/降级图层带来的额外开销 */
@@ -620,11 +551,14 @@
         }
 
         .lyric-line {
-            /* 关键：inline-flex + column + align-items:flex-start。
-               这样主歌词文字（.lyric-main）和翻译（.lyric-trans）都左对齐、
-               共享同一个左边缘；而整行作为 inline-flex 收缩到内容宽度，
-               由 .lyric-list 的 align-items:center 整体居中 ——
-               既保持了「歌词居中」的原有观感，又让译文能贴着主歌词左缘排。 */
+            /* inline-flex + column + align-items:flex-start：
+               主歌词文字（.lyric-main）和翻译（.lyric-trans）共享同一个左边缘；
+               整行作为 inline-flex 收缩到内容宽度，再被 .lyric-list 的
+               align-items:flex-start 统一钉在左缘 —— 每行左对齐同一条竖线。
+               ★ 缩放原点是**文字的左缘**（16px 50%，行有 16px 左内边距），不是盒子的
+                 左缘：从盒子边缘放大时，文字实际被推到 16×(缩放−1) 的位置 ——
+                 2 倍时正好右移 16px，焦点行就会比其它行"往右偏一点点"。
+                 放在文字左缘后，放大只往右长，四条边的左缘永远在同一条竖线上。 */
             display: inline-flex;
             flex-direction: column;
             align-items: flex-start;
@@ -632,7 +566,8 @@
             font-size: 2.2rem;
             font-weight: 600;
             line-height: 1.5;
-            text-align: center;
+            text-align: left;
+            transform-origin: 16px 50%;
             margin: 10px 0;
             padding: 4px 16px;
             border-radius: 40px;
@@ -655,15 +590,12 @@
         }
 
         /* 主歌词文字容器：只负责把逐字元素横向排开（可换行）。
-           justify-content:center 让长句换行时短行仍居中 —— 保持原壁纸观感。
-           整体左对齐由父级 .lyric-line 的 align-items:flex-start 决定
-           （inline-flex 收缩后行宽 = 文字宽，居中与左对齐对单行无差别）。
-           注意「当前句放大」的 scale 仍在行上：翻译必须与主歌词同步缩放，
-           否则主歌词放大后向下/向左扩展会侵入翻译、破坏左对齐。 */
+           左对齐后长句换行时，短行也贴左缘（justify-content:flex-start）——
+           否则回落到 center 会在左对齐里凭空出现一段"居中"的短行。 */
         .lyric-main {
             display: flex;
             flex-wrap: wrap;
-            justify-content: center;
+            justify-content: flex-start;
             align-items: baseline;
             max-width: 100%;
         }
@@ -716,10 +648,71 @@
                 transform 1.3s cubic-bezier(0.16, 1, 0.3, 1) 0.16s;
         }
 
+        /* 唱完的行：缩小 + 模糊 + **淡出到不可见**。
+           时序刻意分开：缩放/模糊立刻开始（1.5s），不透明度**先保持 0.55s 再淡**，
+           这样"缩小模糊"这个过程看得见，粒子也正是这段时间里飘散的；
+           到 1.25s 时整行已经透明 —— 等价于"唱完就隐藏"，但布局高度保留，
+           滚动/居中的计算一行都不用改（opacity 不参与布局）。 */
+        /* 唱完的行：缩小 + 模糊 + 淡出隐藏。
+           时序与"划掉"这条线对齐：线用 1.15s 从左划到右，文字的不透明度
+           从 0.75s 才开始掉、1.2s 到 0 —— 于是线正好在文字消失的瞬间抵达最右端。
+           （早掉会看不清划线过程，晚掉会留下一条悬空的线。） */
         .lyric-line.played {
             filter: blur(8px);
-            opacity: 0.26;
+            opacity: 0;
             transform: scale(0.93);
+            transition:
+                filter 1.3s cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 0.45s ease 0.75s,
+                transform 1.5s cubic-bezier(0.16, 1, 0.3, 1),
+                margin 0.5s cubic-bezier(0.22, 1, 0.32, 1);
+        }
+
+        /* ===== 唱完那行的"划掉"线 =====
+           草稿纸上把写错的一行划掉那种感觉：一条细线从文字左缘划到右缘。
+           ★ 线画在**独立覆盖层**里，不是画在行内部 —— 行在收起时会加 8px 模糊，
+             线要是行内子元素会一起被糊掉，看上去就是一团白雾而不是一道笔划。
+             覆盖层里的条由 JS 每帧按"行当前的位置/缩放"重新摆放（见 stepStrikes），
+             所以滚动、缩放时依然贴着文字走。 */
+        .lyric-strike-layer {
+            position: fixed;
+            inset: 0;
+            z-index: 4;                 /* 歌词(3) 之上、调试表(6) 之下 */
+            pointer-events: none;
+            overflow: hidden;
+        }
+        .lyric-strike {
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 2px;
+            border-radius: 1px;
+            background: rgba(255, 255, 255, 0.72);
+            box-shadow: 0 0 7px rgba(190, 220, 255, 0.5);
+            transform-origin: 0 50%;
+            pointer-events: none;
+            will-change: transform, opacity;
+        }
+
+        /* ★★ 第 54 轮：**同刻歌词组**（对唱）的"陪跑行"。
+           语义：时间戳相距极近的相邻几行属于同一时刻 → 组内所有行**同时扫光**；
+           但只有**中位行**放大（.active），陪跑行走这条类。
+           为什么不干脆给陪跑行也挂 .active：
+             `.active` 带 `scale(2)`、scale 原点是行中心，相邻两行同时放大 2 倍
+             会向上/下各多占约半个行高 → 直接互相压住（实测重叠明显）。
+           所以陪跑行只取"亮起来 + 参与扫光"这部分外观，不参与放大。
+           ⚠ 扫光的三条规则（基础泛光 / .singing / .sung）与
+             `.lyric-line:not(.active)` 的复位规则都必须把 .simul 一并算进去 ——
+             否则陪跑行会被当成"非当前行"而把扫光层整体撤掉（--lit 白写了）。 */
+        .lyric-line.simul {
+            filter: blur(0);
+            opacity: 1;
+            z-index: 2;
+            transition:
+                filter 1.0s cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1),
+                transform 1.4s cubic-bezier(0.16, 1, 0.3, 1),
+                margin 0.5s cubic-bezier(0.22, 1, 0.32, 1);
         }
 
         /* ===== 逐字：扫光 + 抬高 ===== */
@@ -757,18 +750,24 @@
             transition: filter 0.5s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
-        .lyric-line.active .lyric-char {
+        .lyric-line.active .lyric-char,
+        .lyric-line.simul .lyric-char {
             filter: drop-shadow(0 0 6px rgba(140, 200, 255, 0.5));
         }
-        .lyric-line.active .lyric-char.singing {
+        .lyric-line.active .lyric-char.singing,
+        .lyric-line.simul .lyric-char.singing {
             filter: drop-shadow(0 0 12px rgba(160, 210, 255, 0.85))
                     drop-shadow(0 0 24px rgba(100, 160, 255, 0.5));
         }
-        .lyric-line.active .lyric-char.sung {
+        .lyric-line.active .lyric-char.sung,
+        .lyric-line.simul .lyric-char.sung {
             filter: drop-shadow(0 0 8px rgba(140, 200, 255, 0.55));
         }
 
-        .lyric-line:not(.active) .lyric-char {
+        /* ⚠ 这条复位规则必须把 .simul 也排除掉：它就是"扫光层"的开关，
+           漏掉 .simul 的话陪跑行的 background-image 会被撤成 none、
+           --lit 强制归零 → 陪跑行永远不亮（"同时扫光"直接失效）。 */
+        .lyric-line:not(.active):not(.simul) .lyric-char {
             background-image: none;
             -webkit-text-fill-color: currentColor;
             color: white;
@@ -811,7 +810,8 @@
                 max-height 0.5s cubic-bezier(0.22, 1, 0.32, 1),
                 margin 0.5s cubic-bezier(0.22, 1, 0.32, 1);
         }
-        .lyric-line.active .lyric-trans-wrap {
+        .lyric-line.active .lyric-trans-wrap,
+        .lyric-line.simul .lyric-trans-wrap {
             /* 兜底值：JS 会用精确的内容高度覆盖它（见 syncTransHeights）。
                为什么必须精确 —— max-height 从 0 过渡到一个远大于内容的值时，
                高度在过渡的前几个百分点就"顶到内容"不再增长：视觉上等于
@@ -857,10 +857,10 @@
               所以它上下的两句歌词是「紧挨着」的（不是留一个空洞）。
            ② 进入等待区间时才展开：上下两句歌词平滑地让开，三个点
               在让开的空隙里**渐显**浮现（约 2s）；等待一结束就重新合拢、随之隐藏。
-           ③ 靠"歌词的左边界"，而不是容器（≈屏幕）的左边界：行宽由
-              --gap-w 给（JS 量出最长歌词行的宽度算出来的），行居中排布，
-              三个点再靠这条盒子的左缘 —— 大屏上歌词是居中的，
-              贴容器左缘会离歌词十万八千里。
+           ③ 靠"歌词的左边界"而不是容器边缘：歌词固定左对齐后，盒子直接铺满
+              歌词列，三个点由 .gap-inner 的 18px 左内边距落在文字左缘附近。
+              （左对齐之前这里要由 JS 量平均行宽反推盒子宽度 —— 那是居中布局
+              的遗留做法，已随「取消居中 / 右对齐」一并删掉。）
               从左侧长大（transform-origin: 0 50%），缩放不会把左半推出去。
            ④ 三个点「一个接一个」点亮 —— 每颗点是**整颗一起**由暗渐变到明
               （无方向性，不是从左往右扫），亮完自然过渡到下一颗。
@@ -881,11 +881,13 @@
         .lyric-line.gap-line {
             display: block;
             height: 0;                               /* 折叠：不占高度 */
-            /* 居中 + 由 --gap-w 决定的宽度 —— 这样"盒子的左缘"就落在
-               歌词块的左边界附近，而不是容器的左边缘（大屏上二者能差几百 px）。
-               --gap-w 由 JS 量出（updateGapWidth），未量到时的兜底见下。 */
-            align-self: center;
-            width: var(--gap-w, min(72vw, 100%));
+            /* ★ 左对齐后不再需要"量平均行宽再反推盒子宽度"：
+               歌词左缘固定，等待点的盒子直接铺满歌词列，三个点靠 .gap-inner
+               的 18px 左内边距落在文字左缘附近（与 .lyric-line 的 16px 内边距
+               只差 2px，肉眼不可见）。
+               缩放原点仍是左缘：展开/合拢都贴着这条竖线走。 */
+            align-self: stretch;
+            width: 100%;
             margin: 0;
             padding: 0;
             letter-spacing: 0;
@@ -1187,6 +1189,32 @@
         .lyric-line.gap-line.open .gap-breath {
             opacity: 1;
         }
+        /* ★ 第 56 轮：收尾窗口里呼吸「提一拍」—— 周期 5s → 1.4s。
+           ── 为什么需要它 ──
+           用户反馈"放大之后停留的时间太久了"：涨到 1.2 倍后要顶着这个大圆
+           停住（保持段），而常态呼吸是 5s 一个来回 —— 保持段里点只走了
+           几个百分点的相位、几乎看不出在动，读起来就是"卡住了"。
+           做法：进收尾窗口时换一条**更短周期**的同类波形，于是同样长的
+           保持段里点能走过 ~25% 相位（scale 1 → 1.06），观感从"停住"变成
+           "还在轻轻长大"，停滞感就被抵消掉了。
+           同时这也是用户给的两条思路里的第二条："快到结束的时候呼吸节奏
+           悄悄加快一点，对齐一下"。
+           ── 为什么换 animation-name 而不是只改 duration ──
+           换 name 会让这条 CSS 动画被**重建**（currentTime 从 0 开始），
+           而 0 相位正好是波谷（scale 1）—— 这与"涨大必须从最小点起步"
+           完全一致。JS 还会在同一帧把 currentTime 显式拨到 0
+           （restartGapBreathFromTrough），两种引擎行为下都落在波谷。
+           ⚠ 波形与 gapBreath **逐字相同**（1 → 1.12），只换周期：
+             呼吸幅度是用户点名不许动的量（探针每次核对 1 ~ 1.12）。
+           ⚠ 不要写成停掉呼吸（animation: none）——那会让该行此后再也不呼吸。 */
+        @keyframes gapBreathPulse {
+            0%, 100% { transform: scale(1); }
+            50%      { transform: scale(1.12); }
+        }
+        .gap-inner.gap-closing .gap-breath {
+            animation-name: gapBreathPulse;
+            animation-duration: 1.4s;
+        }
         /* 等待点行展开时，外层要停掉继承来的呼吸（真实心跳由 .gap-breath 给）；
            同时给 height/margin 补过渡 —— 它们本来是「随继承到 .open 的
            transition」在跑，现在被 animation: none 截断了这个继承。 */
@@ -1245,14 +1273,16 @@
             initial-value: 0;
         }
 
-        /* ===== 连接状态：悬浮在播放控件右下角 =====
-           一块同一材质的小玻璃胶囊，右缘与控件右缘对齐、贴在它下沿。
+        /* ===== 连接状态：贴在控件条下方的一枚小胶囊 =====
+           左缘与封面/歌名的左缘对齐（竖排布局同一条竖线），宽度收缩到内容宽。
            横向排布「连接 / 播放器 / IP / 端口 / 协议」，窄屏逐级收起次要字段。
            pointer-events: none —— 它只是信息，不该吃掉任何交互。 */
         .conn-bar {
             position: relative;
             z-index: 1;
             flex: 0 0 auto;
+            align-self: flex-start;
+            margin-top: clamp(8px, 1.1vh, 16px);
             max-width: 100%;
             display: flex;
             align-items: center;
@@ -1316,60 +1346,90 @@
             50%      { opacity: 0.22; }
         }
 
-        /* ===== 播放控件（嵌在玻璃胶囊右段）=====
-           收藏 / 上一曲 / 播放暂停 / 下一曲 / 音量。
-           自己再套一层极淡的内层玻璃：液态玻璃常见的"玻璃里还有玻璃"，
-           层次感比一整块平板更强。图标统一用描边 SVG（不依赖字体符号）。 */
+        /* ===== 播放控件（三段式图标行）=====
+           收藏 / 上一曲 / 播放暂停 / 下一曲 / 音量，没有任何底板与滤镜。
+           图标统一用内联 SVG（不依赖字体符号），实心 + 圆角描边。 */
         .player-bar {
             position: relative;
             z-index: 1;
-            flex: 0 0 auto;
+            flex: 1 1 auto;
             display: flex;
             align-items: center;
-            gap: 6px;
-            padding: 5px 9px;
-            /* 内层玻璃与外层玻璃同心：26 − 10 = 16 */
-            border-radius: var(--r-inner);
-            background: rgba(255, 255, 255, 0.06);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+            /* 三段式：左 = 音量，中 = 上一首/播放/下一首，右 = 收藏（对应参照图二） */
+            justify-content: space-between;
+            gap: 10px;
+            width: 100%;
+            /* 给绝对定位的传输组留出高度，否则整行会比它矮 */
+            min-height: 44px;
+            padding: 0;
+            border-radius: inherit;
+            background: transparent;
+            border: 0;
+            box-shadow: none;
         }
+        /* 中间那组要真正居中：左右两组宽度不等，所以给它一个自动外边距 */
+        .pb-transport {
+            /* 绝对定位 + 50%：左右两组宽度不等（音量组比收藏 chip 宽得多），
+               用 space-between 会把中间这组推偏几十像素。脱离文档流才是真正居中。 */
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: clamp(10px, 1.2vw, 24px);
+        }
+
         .pb-btn {
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 36px;
-            height: 36px;
+            /* 热区比图标大一圈，图标本身按下面的 svg 尺寸走 */
+            width: 50px;
+            height: 50px;
             padding: 0;
             border: 0;
             border-radius: 50%;
             background: transparent;
-            color: rgba(255, 255, 255, 0.8);
+            color: rgba(255, 255, 255, 0.82);
             cursor: pointer;
             -webkit-tap-highlight-color: transparent;
             transition: background-color 0.2s ease, color 0.2s ease, transform 0.12s ease;
         }
         .pb-btn:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
-        .pb-btn:active { transform: scale(0.9); }
+        .pb-btn:active { transform: scale(0.92); }
         .pb-btn svg {
             display: block;
-            width: 19px;
-            height: 19px;
-            fill: none;
+            width: 27px;
+            height: 27px;
+            fill: currentColor;
             stroke: currentColor;
-            stroke-width: 1.8;
+            /* 描边只用来把尖角"圆"掉（stroke-linejoin:round）：不加这条，
+               三角与方块的角是硬直边，和参照图那种圆润的实心块差一截。 */
+            stroke-width: 1.6;
             stroke-linecap: round;
             stroke-linejoin: round;
         }
-        /* 播放/暂停：白底圆钮，最醒目 */
+        /* 两侧的小工具图标（音量）：比中间的传输键小一档、也暗一档 */
+        .pb-util { width: 34px; height: 34px; color: rgba(255, 255, 255, 0.6); }
+        .pb-util svg { width: 19px; height: 19px; stroke-width: 1.6; }
+        .pb-util:hover { color: #fff; }
+        /* 播放/暂停：**不再是白底圆钮**（参照图二里它就是一枚图标）。
+           只把尺寸提到比两侧大、颜色给到最亮，靠"更大更白"当视觉主轴。 */
         .pb-main {
-            width: 42px;
-            height: 42px;
-            background: rgba(255, 255, 255, 0.94);
-            color: #101010;
+            width: 58px;
+            height: 58px;
+            background: transparent;
+            color: #fff;
         }
-        .pb-main:hover { background: #fff; color: #000; }
-        .pb-main svg { width: 20px; height: 20px; stroke-width: 2.1; }
+        .pb-main:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+        .pb-main svg {
+            width: 38px;
+            height: 38px;
+        }
+        /* 上一首 / 下一首：双三角，实心（与参照图一致），比播放键小一档 */
+        #btnPrev svg, #btnNext svg { width: 33px; height: 33px; }
         /* 播放/暂停两枚图标常驻 DOM，只切显隐（避免每次点击重建节点） */
         .pb-main .ic-pause { display: none; }
         .player-bar.playing .pb-main .ic-play { display: none; }
@@ -1377,19 +1437,30 @@
         /* 音量图标同理：静音时换成带叉的 */
         .pb-vol-icon .ic-vol-mute { display: none; }
         .pb-vol-icon.muted .ic-vol-on { display: none; }
+        .pb-vol-icon.muted { color: rgba(255, 255, 255, 0.42); }
         .pb-vol-icon.muted .ic-vol-mute { display: block; }
-        /* 已收藏：实心红心 */
-        .pb-btn.on { color: #ff6b8b; }
-        .pb-btn.on svg { fill: currentColor; }
-        .pb-btn.muted { color: rgba(255, 255, 255, 0.38); }
 
+        /* 收藏：右侧那颗带淡底色的圆角方块（参照图里唯一有"面"的元素）。
+           只是一层半透明白 + 一圈内描边，没有背景滤镜。 */
+        .pb-chip {
+            flex: 0 0 auto;
+            width: 42px;
+            height: 42px;
+            border-radius: min(var(--r-glass, 26px), 13px);
+            background: rgba(255, 255, 255, 0.10);
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+            color: rgba(255, 255, 255, 0.86);
+        }
+        .pb-chip svg { width: 19px; height: 19px; }
+        .pb-chip:hover { background: rgba(255, 255, 255, 0.16); color: #fff; }
+        /* 已收藏：实心红心 */
+        .pb-chip.on { color: #ff6b8b; }
+        .pb-chip.on svg { fill: currentColor; }
         .pb-volume {
             display: flex;
             align-items: center;
-            gap: 7px;
-            margin-left: 2px;
-            padding-left: 9px;
-            border-left: 1px solid rgba(255, 255, 255, 0.1);
+            gap: 8px;
+            flex: 0 0 auto;
         }
         /* 音量条：与进度条同一套零件（细轨 + 圆形滑块 + --v 驱动），
            视觉语言统一。关键是命中区做到 22px 高 —— 原生 range 只有 4px 高，
@@ -1397,7 +1468,7 @@
         .pb-range {
             position: relative;
             flex: 0 0 auto;
-            width: 84px;
+            width: 72px;
             height: 22px;
             cursor: pointer;
             touch-action: none;
@@ -1427,35 +1498,16 @@
             margin-top: -2px;
             border-radius: 999px;
             background: linear-gradient(90deg, rgba(255, 255, 255, 0.72), #ffffff);
-            transform: scaleX(var(--v, 1));
-            transform-origin: 0 50%;
-            will-change: transform;
+            /* 同进度条：clip 而不是 scaleX，圆角才不会被压扁 */
+            clip-path: inset(0 calc(100% - var(--v, 1) * 100%) 0 0 round 999px);
             pointer-events: none;
             transition: height 0.18s ease, margin-top 0.18s ease;
         }
         .pb-range:hover .pb-range-fill,
         .pb-range.dragging .pb-range-fill { height: 6px; margin-top: -3px; }
-        .pb-range-thumb {
-            position: absolute;
-            top: 50%;
-            left: calc(var(--v, 1) * 100%);
-            width: 11px;
-            height: 11px;
-            margin: -5.5px 0 0 -5.5px;
-            border-radius: 50%;
-            background: #fff;
-            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.5);
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.18s ease;
-        }
-        .pb-range:hover .pb-range-thumb,
-        .pb-range.dragging .pb-range-thumb,
-        .pb-range:focus-visible .pb-range-thumb { opacity: 1; }
         /* 静音：整条转成低对比，而不是把命中区一起藏掉 */
         .pb-range.dim::before { background: rgba(255, 255, 255, 0.1); }
         .pb-range.dim .pb-range-fill { background: rgba(255, 255, 255, 0.34); }
-        .pb-range.dim .pb-range-thumb { background: rgba(255, 255, 255, 0.5); }
         .pb-range:focus-visible {
             outline: 2px solid rgba(255, 255, 255, 0.55);
             outline-offset: 4px;
@@ -1466,44 +1518,80 @@
             color: rgba(255, 255, 255, 0.4);
             font-size: 1.4rem;
             filter: blur(0.5px);
-            text-align: center;
+            text-align: left;                 /* 右半屏固定左对齐，占位文字跟着左 */
             padding: 40px 0;
         }
 
-        /* 中等宽度起：进度条独占第二行 —— 封面/曲目与控件共处第一行，
-           这样窄窗口下进度条也不会被挤成一小截（拖动距离够长才好定位）；
-           同时让出状态条上的次要字段。玻璃换回大圆角矩形（两行内容用胶囊会很怪）。 */
-        /* 中窄窗口：整条状态胶囊快贴到玻璃宽度上限了，先把最长的"来源"那句收起 */
+        /* ===== 窄窗口 =====
+           分栏的前提是"横向有空间"：左右各一半时，歌词每行只剩半屏宽，
+           而封面的正方形又要求足够高度。窗口窄到一定程度就改成上下分：
+           播放区在上（矮，封面缩到 22vh），歌词在下。 */
         @media (max-width: 1040px) {
             .cb-tail { display: none; }
+            .np-inner { max-width: min(calc(78% * var(--np-u)), calc(40vh * var(--np-u)), 100%); }
         }
 
-        @media (max-width: 900px) {
-            /* 只改变量：内层圆角会跟着 --r-glass 自动重算，始终同心 */
-            .dock-wrap { width: calc(100vw - 32px); --dock-lift: 52px; --r-glass: 26px; --pad-glass: 12px; }
-            .player-dock { flex-wrap: wrap; gap: 8px 14px; }
-            .pd-info { flex: 1 1 auto; max-width: none; }
-            .track-progress { order: 3; flex: 1 1 100%; min-width: 0; }
+        /* 中等宽度：控件行随封面一起变窄，绝对居中会让传输组和音量条撞在一起 ——
+           退回常规流，交给 space-between 分配（这时候"精确居中"已经没有意义）。 */
+        @media (max-width: 1350px) {
+            .pb-transport { position: static; left: auto; top: auto; transform: none; }
+        }
+
+        @media (max-width: 820px) {
+            .lyric-stage {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto 1fr;
+            }
+            .player-col {
+                align-items: center;
+                padding: 3.2vh 6vw 1.6vh;
+            }
+            /* 上下分栏时封面不再抢高度：横向铺开、纵向收紧 */
+            .np-inner {
+                max-width: 100%;
+                display: grid;
+                grid-template-columns: auto 1fr;
+                grid-template-areas:
+                    "art meta"
+                    "art prog"
+                    "art dock"
+                    "conn conn";
+                column-gap: 4vw;
+                row-gap: 1.4vh;
+                align-items: center;
+            }
+            .np-art { grid-area: art; width: 22vh; max-width: 40vw; }
+            .np-meta { grid-area: meta; align-self: end; margin-top: 0; }
+            .track-progress { grid-area: prog; align-self: start; margin-top: 0; }
+            /* 堆叠布局里控件行不再"越出封面 14px"（那是竖排时给 hover 胶囊留的边），
+               否则会顶到右边缘被裁掉；居中那组也回到常规流，避免和音量条打架。 */
+            .player-dock {
+                grid-area: dock;
+                width: 100%;
+                margin: 0;
+                padding: 4px 10px;
+            }
+            .pb-transport { position: static; left: auto; top: auto; transform: none; }
+            .conn-bar { grid-area: conn; margin-top: 0; }
+            .lyric-col { padding: 2vh 4vw 3vh; }
             .conn-bar { gap: 10px; padding: 6px 11px; }
             .cb-item.opt, .cb-sep.opt { display: none; }
         }
 
         @media (max-width: 600px) {
             .lyric-line { font-size: 1.5rem; }
-            .lyric-scroll { padding: 0 5%; }
-            .dock-wrap { width: calc(100vw - 20px); --dock-lift: 44px; --r-glass: 20px; --pad-glass: 9px; gap: 7px; }
-            .player-dock { gap: 6px 10px; }
-            .pd-info { gap: 10px; }
-            .album-art { width: 40px; height: 40px; }
-            .track-name { font-size: 0.84rem; }
-            .track-singer { font-size: 0.72rem; }
+            .lyric-scroll { padding: 0 var(--we-pad-x, 5%); }
+            .np-inner { column-gap: 5vw; }
+            .np-art { width: 18vh; }
             .track-progress { gap: 8px; }
-            .track-progress-time { min-width: 40px; font-size: 0.68rem; }
-            .player-bar { gap: 3px; padding: 3px 5px; }
-            .pb-btn { width: 32px; height: 32px; }
+            .track-progress-time { min-width: 38px; font-size: 0.66rem; }
+            .player-bar { gap: 4px; }
+            .pb-btn { width: 34px; height: 34px; }
             .pb-btn svg { width: 17px; height: 17px; }
-            .pb-main { width: 38px; height: 38px; }
-            .pb-volume { gap: 5px; padding-left: 7px; }
+            .pb-main { width: 40px; height: 40px; }
+            .pb-main svg { width: 21px; height: 21px; }
+            .pb-chip { width: 36px; height: 36px; }
+            .pb-volume { gap: 5px; }
             .pb-range { width: 52px; }
             /* 极窄：状态条只留「连接 + IP」 */
             .conn-bar { font-size: 0.64rem; gap: 8px; padding: 5px 9px; }
@@ -1529,58 +1617,40 @@
             <i><b id="bgBassDebugBar"></b></i>
         </div>
         <div class="bg-art-layer" id="bgArtLayer"></div>
-        <div class="lyric-scroll" id="lyricScroll">
-            <div class="lyric-list" id="lyricList">
-                <div class="empty-lyric">等待播放…</div>
-            </div>
-        </div>
 
-        <!-- 底部悬浮播放控件（iOS 26 Liquid Glass）
-             —— 曲目信息 + 可拖动进度条 + 播放控件同处一块玻璃，
-             绝对定位悬浮，不占布局高度。 -->
-        <div class="dock-wrap" id="dockWrap">
-        <div class="player-dock" id="playerDock">
-            <!-- 液态高光层：跟随指针的一团 + 自主游走的一团（纯装饰） -->
-            <div class="lg-sheen" aria-hidden="true">
-                <i class="s-drift"></i>
-                <i class="s-follow"></i>
-            </div>
-            <!-- idle 变淡的"暗纱"：压暗玻璃面用。纯色层、无滤镜 ——
-                 它变透明只会露出"被折射过的玻璃面"，绝不露出原始背景（无重影） -->
-            <div class="dock-dim" aria-hidden="true"></div>
-            <div class="pd-info" id="trackInfo">
+        <!-- ===== 左半屏：播放控件区（Apple Music 式竖排）=====
+             屏幕按中线分两半：左 = 播放区，右 = 歌词区。
+             这一列自上而下：封面（视觉焦点）→ 歌名 / 歌手（左对齐封面）→
+             进度条 → 播放控件（纯图标行）→ 连接状态小条。
+             整列 pointer-events:none，只有控件行与状态条吃指针 ——
+             「指针不在控件上就变淡」的判定范围因此与以前一致。 -->
+        <section class="player-col" id="dockWrap">
+        <div class="np-inner">
+            <!-- 封面：占主要视觉焦点。宽度就是整列宽度，歌名/进度都对齐它的左右缘 -->
+            <div class="np-art" id="npArt">
                 <img class="album-art" id="albumArt" alt="" crossorigin="anonymous" />
-                <div class="track-meta">
-                    <span class="track-name" id="trackName">—</span>
-                    <span class="track-singer" id="trackSinger">—</span>
-                </div>
             </div>
-            <!-- 进度条：点/拖轨道即定位；--p 是唯一的进度来源（填充与滑块共用） -->
+            <div class="np-meta" id="trackInfo">
+                <span class="track-name" id="trackName">—</span>
+                <span class="track-singer" id="trackSinger">—</span>
+            </div>
+            <!-- 进度条：点 / 拖轨道即定位；--p 是唯一的进度来源（填充与滑块共用） -->
             <div class="track-progress disabled" id="seekWrap">
                 <span class="track-progress-time" id="progressCur">0:00</span>
                 <div class="track-progress-track" id="seekTrack" role="slider" aria-label="播放进度"
                      aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" tabindex="-1">
                     <div class="track-progress-fill" id="progressFill"></div>
-                    <div class="track-progress-thumb" id="seekThumb"></div>
                 </div>
                 <span class="track-progress-time right" id="progressDur">0:00</span>
             </div>
+            <!-- ===== 控件行：参照 Apple Music 的三段式 =====
+                 左：音量（图标 + 细滑条）｜ 中：上一首 / 播放暂停 / 下一首 ｜ 右：收藏
+                 整行**没有任何底板/描边/投影/背景滤镜**，图标直接浮在画面上；
+                 只有右侧那颗收藏按钮有一层很淡的半透明底，对应参照图那颗圆角方块。 -->
+            <div class="player-dock" id="playerDock">
             <div class="player-bar" id="playerBar">
-            <button class="pb-btn" id="btnCollect" title="收藏" aria-label="收藏">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-            </button>
-            <button class="pb-btn" id="btnPrev" title="上一曲" aria-label="上一曲">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/></svg>
-            </button>
-            <button class="pb-btn pb-main" id="btnPlay" title="播放 / 暂停" aria-label="播放 / 暂停">
-                <svg class="ic-play" viewBox="0 0 24 24" aria-hidden="true"><polygon points="7 4 20 12 7 20 7 4"/></svg>
-                <svg class="ic-pause" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="5" width="3.4" height="14" rx="1.1"/><rect x="13.6" y="5" width="3.4" height="14" rx="1.1"/></svg>
-            </button>
-            <button class="pb-btn" id="btnNext" title="下一曲" aria-label="下一曲">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
-            </button>
             <div class="pb-volume">
-                <button class="pb-btn pb-vol-icon" id="btnMute" title="静音 / 取消静音" aria-label="静音 / 取消静音">
+                <button class="pb-btn pb-util pb-vol-icon" id="btnMute" title="静音 / 取消静音" aria-label="静音 / 取消静音">
                     <svg class="ic-vol-on" viewBox="0 0 24 24" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg>
                     <svg class="ic-vol-mute" viewBox="0 0 24 24" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="16" y1="9.5" x2="22" y2="15.5"/><line x1="22" y1="9.5" x2="16" y2="15.5"/></svg>
                 </button>
@@ -1589,13 +1659,28 @@
                 <div class="pb-range" id="volRange" role="slider" tabindex="0" aria-label="音量"
                      aria-valuemin="1" aria-valuemax="100" aria-valuenow="100" aria-valuetext="100%">
                     <div class="pb-range-fill" id="volFill"></div>
-                    <div class="pb-range-thumb" id="volThumb"></div>
                 </div>
             </div>
+            <div class="pb-transport">
+                <button class="pb-btn" id="btnPrev" title="上一曲" aria-label="上一曲">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><g stroke-linejoin="round"><polygon points="10.8 5.2 10.8 18.8 1.4 12"/><polygon points="21.6 5.2 21.6 18.8 12.2 12"/></g></svg>
+                </button>
+                <button class="pb-btn pb-main" id="btnPlay" title="播放 / 暂停" aria-label="播放 / 暂停">
+                    <svg class="ic-play" viewBox="0 0 24 24" aria-hidden="true"><polygon points="7.8 4.9 20.4 12 7.8 19.1" stroke-linejoin="round"/></svg>
+                    <svg class="ic-pause" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.4" y="4.5" width="4.4" height="15" rx="1.4"/><rect x="13.2" y="4.5" width="4.4" height="15" rx="1.4"/></svg>
+                </button>
+                <button class="pb-btn" id="btnNext" title="下一曲" aria-label="下一曲">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><g stroke-linejoin="round"><polygon points="13.2 5.2 13.2 18.8 22.6 12"/><polygon points="2.4 5.2 2.4 18.8 11.8 12"/></g></svg>
+                </button>
             </div>
-        </div>
+            <!-- 收藏：右侧那颗带淡底色的圆角方块（对应参照图右侧按钮的位置与质感） -->
+            <button class="pb-btn pb-chip" id="btnCollect" title="收藏" aria-label="收藏">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+            </button>
+            </div>
+            </div>
 
-        <!-- 连接状态：贴在播放控件的右下角，右缘与玻璃右缘对齐 -->
+        <!-- 连接状态：贴在控件条下方，左缘与封面左缘对齐；只是个信息条 -->
         <div class="conn-bar" id="connBar">
             <div class="cb-item">
                 <span class="sb-dot connecting" id="sbDot"></span>
@@ -1612,6 +1697,22 @@
             <span class="cb-tail">使用LX Music开放API，Powered by BiliBili @Iambig191</span>
         </div>
         </div>
+        </section>
+
+        <!-- ===== 右半屏：歌词 =====
+             固定左对齐（不再提供居中 / 右对齐）：整列文字的左缘贴同一条竖线，
+             与左边「封面 → 歌名 → 进度」的左缘呼应，阅读方向一致。
+             层级：背景 0 < 播放区 1 < 天际屏 2 < 歌词 3（见各自 z-index）。 -->
+        <!-- 唱完那行"划掉"的线（独立层，避免被行的模糊糊掉） -->
+        <div class="lyric-strike-layer" id="strikeLayer" aria-hidden="true"></div>
+
+        <section class="lyric-col" id="lyricCol">
+        <div class="lyric-scroll" id="lyricScroll">
+            <div class="lyric-list" id="lyricList">
+                <div class="empty-lyric">等待播放…</div>
+            </div>
+        </div>
+        </section>
     </div>
 
     <script>
@@ -1660,9 +1761,17 @@
             const bgPhotoEl = document.getElementById('bgPhoto');
             const lyricListEl = document.getElementById('lyricList');
             const lyricScrollEl = document.getElementById('lyricScroll');
+            /* 唱完那行"划掉"效果的状态。
+               fxSuppressUntil：跳转 / seek / 换歌之后的一小段时间内不划线 ——
+                 否则一次 seek 会让几十行同时变成 played、满屏同时划线。
+               lastFxProgress：上一帧进度，用来识别"这一帧是跳变（seek）还是正常推进"。 */
+            let fxSuppressUntil = 0;
+            let lastFxProgress = -1;
+            const strikeLayerEl = document.getElementById('strikeLayer');
             const trackNameEl = document.getElementById('trackName');
             const trackSingerEl = document.getElementById('trackSinger');
             const albumArtEl = document.getElementById('albumArt');
+            const npArtEl = document.getElementById('npArt');
             const bgArtLayerEl = document.getElementById('bgArtLayer');
             const progressFillEl = document.getElementById('progressFill');
             const progressCurEl = document.getElementById('progressCur');
@@ -1677,7 +1786,6 @@
             const btnCollectEl = document.getElementById('btnCollect');
             const volRangeEl = document.getElementById('volRange');
             const volFillEl = document.getElementById('volFill');
-            const volThumbEl = document.getElementById('volThumb');
             const dockWrapEl = document.getElementById('dockWrap');
             const playerDockEl = document.getElementById('playerDock');
             const connBarEl = document.getElementById('connBar');
@@ -1692,8 +1800,75 @@
             let lyricCharElements = [];
             // 间奏等待点所在的行号（换行时用来把所有"不该展开"的等待点合拢）
             let gapLineIndices = [];
+            /* 最后一句**歌词**的行号（跳过末尾的间奏点行）。
+               最后一句唱完之后不再"收起"：歌曲到这儿就结束了，把它暗掉/缩回去
+               只会让画面在结尾忽然空一下 —— 用户要求它保持高亮。 */
+            let lastLyricLine = -1;
 
             let currentActiveLineIndex = -1;
+
+            /* ★★ 第 54 轮：**同刻歌词组**（对唱场景）。
+               洛雪的对唱歌词常把两句的时间戳写得几乎相同（甚至完全相同）；
+               旧实现"只有一句会扫光"—— 因为 `.active` 只有一个索引。
+               现在把"时间戳相距极近的相邻行"归为一组，组内**同时扫光**，
+               整组当作一个"当前句"来做 class / 滚动 / 天际屏。
+               ⚠ 吸纳规则是**以锚点（组的第一行）为准**，不是链式相邻比较：
+                 链式会让 10.0 / 10.4 / 10.8 一路滚成一组（时间越拖越远）；
+                 以锚点为准则 10.8-10.0=0.8 > EPS，自然另起一组。 */
+            const SIMUL_GROUP_EPS = 0.45;   // 秒：时间差 ≤ 它才算"同一时刻"
+
+            let lineGroupId = [];      // 行号 → 组号（-1 = 不参与分组，如同奏点行）
+            let lineGroups = [];       // 组号 → { start, end, center, size }
+            let currentGroup = null;   // 当前活动组（与 currentActiveLineIndex 同步维护）
+
+            function buildLineGroups() {
+                lineGroups = [];
+                lineGroupId = new Array(lyricLines.length).fill(-1);
+                let i = 0;
+                while (i < lyricLines.length) {
+                    const ln = lyricLines[i];
+                    // 间奏点行、空行不参与分组（间奏点永远独立成"组"）
+                    if (!ln || ln.isGap || !ln.text) { i++; continue; }
+                    const anchor = ln.time;
+                    let j = i;
+                    while (j + 1 < lyricLines.length) {
+                        const nx = lyricLines[j + 1];
+                        if (!nx || nx.isGap || !nx.text) break;
+                        if (Math.abs(nx.time - anchor) > SIMUL_GROUP_EPS) break;
+                        j++;
+                    }
+                    const n = j - i + 1;
+                    /* 对齐行（滚动落点 + 放大行 + 天际屏）＝组内**演唱时长最长**的那一行
+                       （并列时取靠前的）。这是用户第 55 轮指定的规则：
+                       "谁占用的时间长就对齐谁" —— 取代了原先"按序号取中位"的写法。
+                       时长取 endTime − time（endTime 由解析器按下一行时间补齐）。
+                       ⚠ 必须是**静态**规则（只看每行自己的时长，不随播放进度变），
+                         否则播放过程中"当前句"会横向漂移、滚动跟着反复重定位。 */
+                    let center = i, bestSpan = -1;
+                    for (let k = i; k <= j; k++) {
+                        const lnk = lyricLines[k];
+                        const span = (typeof lnk.endTime === 'number' && isFinite(lnk.endTime))
+                            ? Math.max(0, lnk.endTime - lnk.time) : 0;
+                        if (span > bestSpan + 1e-6) { bestSpan = span; center = k; }
+                    }
+                    const gid = lineGroups.length;
+                    for (let k = i; k <= j; k++) lineGroupId[k] = gid;
+                    lineGroups.push({ start: i, end: j, center: center, size: n, centerSpan: bestSpan });
+                    i = j + 1;
+                }
+            }
+
+            // 行号 → 它所属的组；不参与分组的行（间奏点）自成一组
+            function groupOfLine(idx) {
+                if (typeof idx !== 'number' || idx < 0) return { start: idx, end: idx, center: idx, size: 1 };
+                const gid = lineGroupId[idx];
+                if (typeof gid === 'number' && gid >= 0 && lineGroups[gid]) return lineGroups[gid];
+                return { start: idx, end: idx, center: idx, size: 1 };
+            }
+            function sameGroup(a, b) {
+                if (!a || !b) return !a && !b;
+                return a.start === b.start && a.end === b.end;
+            }
 
             // 逐字状态缓存：避免每帧重复写 DOM（-1 未初始化 0 未唱 1 正在唱 2 已唱）
             let charState = [];
@@ -1751,6 +1926,10 @@
             let bgAnimationId = null;
             let bgStartTime = 0;
             let bgCurrentLineIndex = -1;
+            /* ★ 第 54 轮：天际屏的"整组"去重键。
+               只比 bgCurrentLineIndex（= 中位行）是不够的：同刻组从 {1..1}
+               变成 {1..2} 时中位行可能仍是 1，会被误判成"同一句"而不重建。 */
+            let bgCurrentGroupEnd = -1;
             let bgFloat = [];          // 漂移参数缓存（避免每帧读 dataset）
             let bgRevealPtr = 0;       // 逐字出现指针（字符按时间递增，O(1) 推进）
             let bgBuildToken = 0;      // 构建代次，作废在途的异步重建
@@ -1761,9 +1940,10 @@
             let scrollAnim = null;          // WAAPI 动画对象（位移由合成器线程推进）
             let scrollLastInterrupt = -1e9; // 上一次滑动被"没跑完就打断"的时刻（快歌词检测）
 
-            // 行 class 缓存，避免每次换行重写全部 68 行（0 无 1 played 2 active 3 up1 4 up2）
+            // 行 class 缓存，避免每次换行重写全部 68 行
+            // （0 无 1 played 2 active 3 up1 4 up2 5 simul＝同刻组的"陪跑行"）
             let lineClassCache = [];
-            const LINE_CLASS = [null, 'played', 'active', 'upcoming-1', 'upcoming-2'];
+            const LINE_CLASS = [null, 'played', 'active', 'upcoming-1', 'upcoming-2', 'simul'];
 
             // ---- 背景着色器（WebGL）----
             // 算法参考 applemusic-like-lyrics 的 IsolationRenderer：
@@ -2007,21 +2187,32 @@
 
             // 根据进度刷新高亮 / 滚动 / 逐字效果（单一入口，避免多路数据互相拉扯）
             function applyProgress(progress) {
+                /* ★ 这一帧是不是"跳变"（拖进度条 / seek / 换歌归零）？
+                   跳变时会有成批的行同时变成 played —— 那不该喷粒子，
+                   而且已经飞着的也该清掉（它们对应的是旧位置）。 */
+                if (lastFxProgress >= 0 && Math.abs(progress - lastFxProgress) > 1.2) {
+                    fxSuppressUntil = performance.now() + 500;
+                    clearAllStrikes();      // 跳转后旧位置的划线一并撤掉
+                }
+                lastFxProgress = progress;
                 // 进度条与时间文本也要跟着走；放在最前面，
                 // 这样即使还没有歌词（纯音乐 / 歌词加载中）进度条也正常
                 updateProgressUI(progress);
                 if (!lyricLines.length) return;
                 const idx = findActiveLineIndex(progress);
-                if (idx !== currentActiveLineIndex) {
+                /* ★ 第 54 轮：变更判据用**同刻组**而不是行号 ——
+                   对唱组内两行的 time 不同，进度推进会组内换行号；
+                   按行号判就会在组内反复重挂 class + 重定位（可见抖动）。 */
+                const g = groupOfLine(idx);
+                if (!sameGroup(currentGroup, g)) {
                     updateHighlight(idx, true);
                 } else if (idx >= 0) {
-                    updateActiveLine(idx, progress);
+                    updateActiveGroup(progress);
                 }
                 revealBgChars(progress);
             }
 
-            function stopProgressLoop() {
-                progressRunning = false;
+            function stopProgressLoop() {                progressRunning = false;
                 if (progressRafId) {
                     cancelAnimationFrame(progressRafId);
                     progressRafId = null;
@@ -2198,6 +2389,22 @@
                 }
 
                 return parsed;
+            }
+
+            /* 数一下这份歌词里"带时间戳的行"有多少条。
+               只用于归属校验的松紧判断：一句的（纯音乐占位 / 暂无歌词）
+               不携带"属于哪首歌"的信息，不该为它清屏。
+               ⚠ AnyListen 逐字格式整首词一个 [mm:ss] 都没有 —— 直接数方括号会把
+                 它全判成"单句"、于是绕过归属校验。所以先按 AnyListen 解析一次
+                 （解析器本身不打日志，不会把控制台刷屏）。 */
+            function countTimedLines(text) {
+                if (!text || typeof text !== 'string') return 0;
+                if (isAnyListenFormat(text)) {
+                    const al = parseAnyListenLrc(text);
+                    if (al.length > 0) return al.length;
+                }
+                const m = text.match(/\[\d+:\d+(?:[.:]\d+)?\]/g);
+                return m ? m.length : 0;
             }
 
             function parseLyric(text) {
@@ -2492,10 +2699,19 @@
 
             function jumpScrollTo(targetTop) {
                 if (lyricSwitching) return;   // 换歌过渡期：锚定/直接写入一并冻结
+                /* ★ 这次写入是否打断了"正在进行的居中"？
+                   换句时的锚定补偿（updateHighlight 里那一下）每句都会调用本函数，
+                   它会把上一句还没跑完的滑动/跟随就地结算掉。如果不在此时记账，
+                   下一次换句会以为"上次滑得很顺"，于是一直用 780ms 的长档 ——
+                   两句间隔 600ms 时永远跑不完，那一句就停在离中心十几像素处。
+                   记下时刻后，下一次换句会切到"快歌词通道"（更短的滑动 + 逐帧跟随），
+                   追平后才回到长档。 */
+                const interrupted = !!gapFollow || !!scrollAnim;
                 gapFollowStop();
                 if (scrollAnim) { scrollAnim.cancel(); scrollAnim = null; }
                 if (lyricListEl) lyricListEl.style.transform = '';
                 lyricScrollEl.scrollTop = targetTop;
+                if (interrupted) scrollLastInterrupt = performance.now();
             }
 
             // 「让第 index 行居中」的滚动目标（返回值就是 scrollTop 目标）。
@@ -2667,6 +2883,7 @@
                 return by((lo + hi) / 2);
             }
 
+            let lastGapScrollAt = 0;   // 上一次换句滚动的时刻（判断换句节奏用）
             function gapScroll(index) {
                 if (!lyricScrollEl || !lyricListEl) return;
                 const containerHeight = lyricScrollEl.clientHeight;
@@ -2690,8 +2907,18 @@
                    这样通道的进出只取决于"换句间隔是否 < 900ms"，不会因为
                    锚定先杀掉了上一段跟随（打断信号漏标）而掉回慢通道 ——
                    掉回去的结果就是 780ms 滑动在 0.35s 一句的节奏下永远跑不完。 */
-                const recent = performance.now() - scrollLastInterrupt < 900;
-                if (recent) scrollLastInterrupt = performance.now();
+                /* ★ 换句节奏：距**上一次换句滚动**的时间。
+                   < 900ms 说明句子换得很快，这一句大概率也活不长 —— 780ms 的滑动
+                   根本跑不完，必须压缩。原先这个判断依赖"上一次滑动是否被打断"，
+                   但快段里锚定补偿未必真触发（class 变化当帧 rect 还没动、jump≈0），
+                   信号就永远记不上，于是每句都按 780ms 滑、每句都差 8~10px 收场，
+                   下一句再从这 8~10px 出发 —— 看起来就是"居中失效，直到下一句才好"。
+                   直接用节奏本身判断最稳，不依赖任何打断记账。 */
+                const nowMs = performance.now();
+                const cadence = lastGapScrollAt ? nowMs - lastGapScrollAt : Infinity;
+                lastGapScrollAt = nowMs;
+                const recent = cadence < 900 || nowMs - scrollLastInterrupt < 900;
+                if (recent) scrollLastInterrupt = nowMs;
                 const state = {
                     raf: 0,
                     index,
@@ -2724,11 +2951,16 @@
             }
 
             // 行状态码：0 无 / 1 played / 2 active / 3 upcoming-1 / 4 upcoming-2
-            function lineStateCode(idx, activeIndex) {
-                if (idx === activeIndex) return 2;
-                if (idx === activeIndex + 1) return 3;
-                if (idx === activeIndex + 2) return 4;
-                if (idx < activeIndex) return 1;
+            /* 行状态码。group 是"同刻组"对象 {start,end,center}
+               （为兼容旧调用点，传数字时按"单行组"处理）。
+               5 = simul：组内**非中位**的陪跑行 —— 一起扫光、不放大。 */
+            function lineStateCode(idx, group) {
+                if (typeof group === 'number') group = { start: group, end: group, center: group };
+                if (!group) return 0;
+                if (idx >= group.start && idx <= group.end) return (idx === group.center) ? 2 : 5;
+                if (idx === group.end + 1) return 3;
+                if (idx === group.end + 2) return 4;
+                if (idx < group.start) return 1;
                 return 0;
             }
 
@@ -2746,17 +2978,141 @@
                 el.style.setProperty('--line-fit', fit.toFixed(3));
             }
 
-            function updateLineClasses(activeIndex) {
+            /* ===== 唱完那行的"划掉"线 =====
+               时机：行**刚**变成 played（缩小/模糊正要开始）的那一帧。
+               画法：按"每一行文字"各画一条 —— 用逐字元素的 offsetLeft/offsetTop 分组
+                     （长句换行时能分出多行），从该行最左的字划到最右的字；
+                     没有逐字元素（纯文本行）就整块当一行。
+               位置：条是**覆盖层里的 fixed 元素**，每帧按行的当前 rect 重新摆放，
+                     所以滚动/缩放时都贴着文字；而线本身不受行的模糊影响，是一道清晰的笔划。
+               节奏：1.15s，曲线"起笔快、收笔缓"；不透明度从 0.75s 起随文字一起淡掉，
+                     1.2s 归零 —— 线到最右端时整行正好消失。
+               守卫（拖进度条 / 换歌 / 跳转时不出错）：
+                 · fxSuppressUntil —— applyProgress 发现进度跳变就压住 500ms；
+                 · lyricSwitching  —— 换歌重建期间不划；
+                 · 行重新变成 active/upcoming（seek 回退）→ 立刻撤线；
+                 · prefers-reduced-motion → 不划。 */
+            const STRIKE_MS = 1150;
+            const STRIKE_FADE_AT = 750;      // 与 .lyric-line.played 的 opacity 延时一致
+            const STRIKE_FADE_MS = 450;
+            const fxReduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+            const strikes = [];              // 进行中的划线
+            let strikeRaf = 0;
+
+            /* 起笔快、收笔缓 */
+            function strikeEase(t) {
+                if (t <= 0) return 0;
+                if (t >= 1) return 1;
+                return 1 - Math.pow(1 - t, 2.2);
+            }
+
+            function disposeStrike(st) {
+                for (let i = 0; i < st.bars.length; i++) {
+                    const b = st.bars[i].node;
+                    if (b.parentNode) b.parentNode.removeChild(b);
+                }
+                st.bars.length = 0;
+            }
+
+            function clearStrike(el) {
+                for (let i = strikes.length - 1; i >= 0; i--) {
+                    if (strikes[i].el === el) { disposeStrike(strikes[i]); strikes.splice(i, 1); }
+                }
+            }
+
+            function clearAllStrikes() {
+                for (let i = 0; i < strikes.length; i++) disposeStrike(strikes[i]);
+                strikes.length = 0;
+            }
+
+            function stepStrikes(now) {
+                strikeRaf = 0;
+                for (let i = strikes.length - 1; i >= 0; i--) {
+                    const st = strikes[i];
+                    const el = st.el;
+                    /* 行没了 / 已经不是 played（seek 回退、换歌） → 撤线 */
+                    if (!el || !el.isConnected || !el.classList.contains('played')) {
+                        disposeStrike(st); strikes.splice(i, 1); continue;
+                    }
+                    const el2 = now - st.t0;
+                    const k = strikeEase(el2 / STRIKE_MS);
+                    const fade = el2 <= STRIKE_FADE_AT ? 1
+                        : Math.max(0, 1 - (el2 - STRIKE_FADE_AT) / STRIKE_FADE_MS);
+                    const r = el.getBoundingClientRect();
+                    const sc = el.offsetWidth ? r.width / el.offsetWidth : 1;
+                    for (let j = 0; j < st.bars.length; j++) {
+                        const b = st.bars[j];
+                        const x = r.left + b.row.l * sc;
+                        const y = r.top + (b.row.top + b.row.h / 2 - 1) * sc;
+                        b.node.style.transform =
+                            'translate3d(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px,0) scale(' + (sc * k).toFixed(4) + ',1)';
+                        b.node.style.opacity = fade.toFixed(3);
+                    }
+                    if (el2 >= STRIKE_MS + 60) { disposeStrike(st); strikes.splice(i, 1); }
+                }
+                if (strikes.length && !strikeRaf) strikeRaf = requestAnimationFrame(stepStrikes);
+            }
+
+            function strikeLine(el) {
+                if (!el || fxReduce || !strikeLayerEl) return;
+                if (lyricSwitching || performance.now() < fxSuppressUntil) return;
+                const main = el.querySelector('.lyric-main');
+                if (!main) return;                       // 间奏点行没有文字，不划
+                clearStrike(el);
+
+                /* 按 offsetTop 把逐字元素分行，取每行的左右端（局部坐标，未缩放） */
+                const chars = main.querySelectorAll('.lyric-char');
+                const rows = [];
+                const byTop = {};
+                for (let i = 0; i < chars.length; i++) {
+                    const c = chars[i];
+                    if (!c.offsetWidth) continue;
+                    const t = c.offsetTop;
+                    let r = byTop[t];
+                    if (!r) { r = byTop[t] = { l: c.offsetLeft, r: c.offsetLeft + c.offsetWidth, top: t, h: c.offsetHeight }; rows.push(r); }
+                    else {
+                        if (c.offsetLeft < r.l) r.l = c.offsetLeft;
+                        if (c.offsetLeft + c.offsetWidth > r.r) r.r = c.offsetLeft + c.offsetWidth;
+                    }
+                }
+                if (!rows.length) {
+                    rows.push({ l: main.offsetLeft, r: main.offsetLeft + main.offsetWidth,
+                                top: main.offsetTop, h: main.offsetHeight });
+                }
+
+                const st = { el: el, t0: performance.now(), bars: [] };
+                for (let k = 0; k < rows.length; k++) {
+                    const row = rows[k];
+                    const w = row.r - row.l;
+                    if (w < 8) continue;
+                    const node = document.createElement('span');
+                    node.className = 'lyric-strike';
+                    node.style.width = w + 'px';           // 局部宽度，缩放交给 transform
+                    node.style.opacity = '1';
+                    strikeLayerEl.appendChild(node);
+                    st.bars.push({ node: node, row: row });
+                }
+                if (!st.bars.length) return;
+                strikes.push(st);
+                if (!strikeRaf) strikeRaf = requestAnimationFrame(stepStrikes);
+            }
+
+            function updateLineClasses(group) {
                 const n = lyricLineElements.length;
                 for (let i = 0; i < n; i++) {
-                    const want = lineStateCode(i, activeIndex);
+                    const want = lineStateCode(i, group);
                     if (lineClassCache[i] === want) continue;
                     const el = lyricLineElements[i];
                     if (el) {
                         const prev = lineClassCache[i];
                         if (prev) el.classList.remove(LINE_CLASS[prev]);
                         if (want) el.classList.add(LINE_CLASS[want]);
+                        // 只有"被放大的那一行"（中位行）需要算溢出保护；
+                        // 陪跑行不放大，量了也没用。
                         if (want === 2 && prev !== 2) applyLineFit(el);
+                        /* 刚唱完这一行 → 撒一把粒子（间奏点行没有文字，跳过） */
+                        if (want === 1 && prev !== 1) strikeLine(el);
+                        else if (prev === 1 && want !== 1) clearStrike(el);   // seek 回退：把线撤掉
                         /* 等待点行"本区间刚结束"（want!==2 → 不再是活动行）：
                            在**这里**就摘掉 .open —— 而不是等 resetLineChars 里的
                            setGapOpen。顺序很要紧：先摘 .open 让整行开始折叠，
@@ -2789,7 +3145,10 @@
                 for (let i = 0; i < wraps.length; i++) {
                     const wrap = wraps[i];
                     const line = wrap.parentNode;
-                    const on = !!(line && line.classList && line.classList.contains('active'));
+                    // ★ 第 54 轮：陪跑行（.simul）也要展开译文 —— 它跟中位行一起扫光，
+                    //   只把 .active 当判据的话它的译文会一直折叠着。
+                    const on = !!(line && line.classList &&
+                        (line.classList.contains('active') || line.classList.contains('simul')));
                     if (on) {
                         const h = wrap.scrollHeight;
                         if (h > 0) wrap.style.maxHeight = (h + 1) + 'px';
@@ -2915,57 +3274,16 @@
                 el.style.transform = '';
             }
 
-            // 等待点的水平落点（居中模式）：按「歌词的平均宽度」定位。
-            // 历史版本 1：对齐最长一行的左缘 —— 歌词长一点/短一点，点就跟着漂
-            //（用户反馈：歌词长就靠左、歌词短就靠右），换一首歌还会再整体挪一次。
-            // 历史版本 2：容器中心 − 固定 24% —— 恒定，但和歌词实际位置无关，
-            // 容易落在离歌词较远的地方。
-            // 现在：容器中心往左「半个平均行宽」= 平均宽度歌词块的左缘 ——
-            // 平均值对一首歌是常数，落点依旧恒定不漂；又不会被一句超长行
-            // 拽得离歌词整体太远（用户反馈：按最长算受单一变量影响太大）。
-            const GAP_INNER_PAD = 18;      // 必须与 .gap-inner 的横向 padding 一致
-
-            function updateGapWidth() {
-                if (!lyricListEl || !gapLineIndices.length) return;
-                const listW = lyricListEl.clientWidth;
-                if (listW <= 0) return;
-
-                /* 水平对齐（WE 面板的「水平对齐」，we-glue 写在 --we-lyric-align）：
-                   左/右对齐时盒子直接铺满整行，三个点由 --we-gap-anchor 钉在相应边缘
-                   —— 与歌词的对齐边保持一致；居中走下面的平均行宽落位。 */
-                let alignMode = 'center';
-                try {
-                    const v = getComputedStyle(document.documentElement)
-                        .getPropertyValue('--we-lyric-align').trim();
-                    if (v === 'flex-start') alignMode = 'left';
-                    else if (v === 'flex-end') alignMode = 'right';
-                } catch (e) { }
-                if (alignMode !== 'center') {
-                    lyricListEl.style.setProperty('--gap-w', listW.toFixed(1) + 'px');
-                    return;
-                }
-
-                const center = listW / 2;
-                // 平均行宽：量所有真实歌词行（跳过等待点行自身）的布局宽度。
-                // offsetWidth 不受 transform 缩放影响，当前行放大中也能量准。
-                let total = 0, cnt = 0;
-                for (let i = 0; i < lyricLineElements.length; i++) {
-                    const el = lyricLineElements[i];
-                    if (!el || !el.classList || el.classList.contains('gap-line')) continue;
-                    const w = el.offsetWidth;
-                    if (w > 0) { total += w; cnt++; }
-                }
-                const avgW = cnt ? total / cnt : listW * 0.5;
-                // 第一个点的目标左缘 = 平均宽度歌词块的左缘；
-                // 不越出容器左内边、也不越过中线（窄屏兜底）
-                let dotsLeft = center - avgW / 2;
-                dotsLeft = Math.max(GAP_INNER_PAD, Math.min(dotsLeft, center - 24));
-
-                // 盒子居中 → 盒子左缘 = 点左缘 − 内层左内边距；再反推宽度
-                const boxLeft = dotsLeft - GAP_INNER_PAD;
-                const w = Math.max(1, listW - 2 * boxLeft);
-                lyricListEl.style.setProperty('--gap-w', w.toFixed(1) + 'px');
-            }
+            /* ===== 等待点的水平落点 =====
+               ★ 取消"居中 / 右对齐"之后这里不再需要落点计算。
+               历史：居中对齐时要按「歌词的平均宽度」把点团放在歌词块的左缘附近
+               （量平均行宽 → 反推盒子宽度 → 写 --gap-w），因为大屏上歌词是居中的，
+               贴容器左缘会离歌词十万八千里。
+               现在歌词整列左对齐、左缘恒定，等待点的盒子直接铺满歌词列
+               （CSS 里 .gap-line 的 align-self:stretch + width:100%），
+               三个点由 .gap-inner 的 18px 左内边距落在文字左缘附近。
+               于是这一整段量宽/写变量的逻辑（以及 resize 时的重算）全部删除 ——
+               少一处随字号变化而漂移的运行时状态。 */
 
             // 等待点行的「展开 / 合拢」——显式驱动，不依赖行 class 缓存。
             // 展开时上下两句歌词被平滑地推开、三个点在空隙里浮现；
@@ -2989,6 +3307,14 @@
                     el.classList.remove('closing');
                     const gi = el.querySelector('.gap-inner');
                     if (gi) gi.classList.remove('gap-closing', 'gap-out');
+                    /* ★ 第 54 轮：把可能还挂着的"缩回清理定时器"一并取消。
+                       场景：seek 到间奏最后一段（remain 已进入收尾窗口）时，
+                       updateHighlight 会先 resetLineChars → setGapOpen(false) 挂上
+                       .closing 并arm 一个 700ms 的清理；紧接着 setGapOpen(true)
+                       重新展开。若不取消，那个定时器 700ms 后会把刚刚挂上的
+                       .gap-closing / .gap-out 摘掉 —— 收尾放大与出口就没了。
+                       （本轮把提前量改成自适应后窗口最长 1.6s，更容易撞上。） */
+                    cancelGapRetract(el);
                 }
                 // 收起（含跳转/换歌等异常路径）：同一帧挂 .closing —— 外层
                 // height 立刻开始合拢，内层延迟 0.12s 缩回，两件事连成一气。
@@ -2997,11 +3323,109 @@
                 if (!open) el.classList.add('closing');
             }
 
-            // 收尾提醒的提前量：剩余时间 ≤ 它就开始缓动涨大。
-            // 三段排满这 1s：涨大 0.7s + 保持 0.2s + 出口 0.1s。
-            // 窗口很窄，所以"保持段"必须留得出来：若把时间全花在长大上，
-            // 点刚涨到位就被收回，观感上等于没提醒（第 46 轮踩过同类坑）。
-            const GAP_PULSE_LEAD = 1.0;
+            /* ===== 收尾提醒（第 54 轮重做：在"呼吸的最小点"起放大）=====
+               问题：呼吸是 5s 一个来回的连续起伏（1 → 1.12）。旧实现固定"剩余 1.0s
+               开始涨大"，于是涨大**可能正好赶在呼吸正在变大的那半程上** ——
+               用户看到的是一次被叠了两遍的放大："本来就在放大，然后又放大"，
+               很别扭。
+
+               要求：① 涨大必须从"点最小的时候"起步；
+                     ② 涨大过程要看得清，不能太局促；
+                     ③ 按间奏长度自适应。
+
+               做法：
+               ① **相位对齐**：把呼吸动画的 `currentTime` 拨一下，让一个**波谷
+                  （scale=1）正好落在"涨大起点"上**。留多少提前量是自由的，
+                  因为波谷可以被放到任意时刻 —— 这就是原来的别扭感被彻底消掉的
+                  原因（不再"撞上"呼吸的上升半程）。
+                  写 currentTime 是**幂等**的：正常播放时它算出来的值就等于动画
+                  自己推进到的值，写入无感；跳转/换歌后会一次性把相位拉正。
+               ② **自适应提前量**：`lead = clamp(间奏时长 × 0.14, MIN, MAX)`。
+                  · 下限 = 涨大 0.7s + 保持 0.15s + 出口 0.1s ≈ 0.95s（取 1.0s）
+                    —— 再短就是"刚涨到就被收回"，等于没提醒（第 46 轮踩过）。
+                  · ★ 第 56 轮把上限从 1.6s 压到 **1.15s**：用户反馈
+                    "放大之后停留的时间太久了"。保持段 = lead − 涨大 0.7 −
+                    出口 0.1，于是从原来的 0.3~0.8s 收窄到 **0.2~0.35s**。
+                    （涨大过程本身仍是完整的 0.7s，所以"看得清"不受影响；
+                      被压掉的只是"顶着大圆干等"的那一段。）
+                  ③ ★ 第 56 轮新增：进窗口时呼吸**换到更短的周期**（5s → 1.4s，
+                     CSS 的 .gap-inner.gap-closing .gap-breath），并把相位归零
+                     （波谷）。保持段里点因此仍在明显起伏（scale 1 → 1.06），
+                     从"停住"变成"还在轻轻长大" —— 与 ② 一起抵消停滞感。 */
+            const GAP_PULSE_LEAD_MIN = 1.0;
+            const GAP_PULSE_LEAD_MAX = 1.15;       // ★ 第 56 轮：1.6 → 1.15（压掉过长的保持段）
+            const GAP_PULSE_RATIO = 0.14;          // ★ 第 56 轮：0.22 → 0.14
+            const GAP_HOLD_MIN = 0.15;             // 涨到位后至少停这么久
+            const GAP_ZOOM_MS = 700;               // 与 .gap-inner 的 transition 时长一致
+            const GAP_BREATH_PERIOD_FALLBACK = 5000;  // 读不到 CSS 时的兜底周期（ms）
+
+            function gapPulseLead(gapDur) {
+                const need = GAP_ZOOM_MS / 1000 + GAP_HOLD_MIN + GAP_OUT_LEAD;   // ≈0.95
+                const lo = Math.max(GAP_PULSE_LEAD_MIN, need);
+                const hi = Math.max(lo, GAP_PULSE_LEAD_MAX);
+                return Math.max(lo, Math.min(hi, gapDur * GAP_PULSE_RATIO));
+            }
+
+            /* ★ 第 56 轮：进收尾窗口时把呼吸"从波谷重新起拍"。
+               挂上 .gap-closing 会让 CSS 把呼吸换成更短的周期
+               （animation-name: gapBreathPulse，1.4s）—— 换周期会让相位
+               跳到中间值。这里在同一帧把 currentTime 拨回 0，即波谷。
+               于是两件事同时成立：
+                 · 涨大从"点最小的时候"起步（与 alignGapBreathTrough 同目的，
+                   做成双保险：即使相位对齐那条因节流没赶上，这里也保证是波谷）；
+                 · 保持段里点仍在明显起伏 → 抵消"涨到位后干等"的停滞感。
+               ⚠ 只拨 currentTime、不碰 animation-play-state（停动画会让该行
+                 此后再也不呼吸，第 43 轮踩过的真 bug）。 */
+            function restartGapBreathFromTrough(lineEl) {
+                if (!lineEl) return;
+                const breath = lineEl.querySelector('.gap-breath');
+                if (!breath || typeof breath.getAnimations !== 'function') return;
+                const list = breath.getAnimations();
+                for (let i = 0; i < list.length; i++) {
+                    const a = list[i];
+                    if (a && (a.animationName === 'gapBreath' || a.animationName === 'gapBreathPulse')) {
+                        try { a.currentTime = 0; } catch (e) { /* 个别引擎不允许 seek：忽略 */ }
+                        return;
+                    }
+                }
+            }
+
+            /* 把呼吸相位拨成"dt 秒之后恰好是波谷"。
+               dt = 距"涨大起点"还有多少秒（<=0 表示已经进窗口，不再拨）。
+               ⚠ 节流 150ms：它每帧都会被调用，但 getAnimations/getComputedStyle
+                 每帧都做属于无谓开销。节流不影响精度 —— dt 与写入发生在同一
+                 次调用里，锁定是精确的，动画之后按同一时钟自然推进。
+               ⚠⚠ 只在**进度推进时**维护相位。暂停（或拖动进度条）时进度不动，
+                 dt 是常量 → 目标 currentTime 恒定，而动画自己每 150ms 前进一点、
+                 又被拉回原处 → **呼吸被按住不动**（实测暂停时采样 14s，
+                 scale 只在 1.108~1.114 之间抖，周期的波峰完全测不到）。
+                 暂停时也根本不需要维护：remain 不变，不会触发涨大；真停在
+                 收尾窗口里的话 .gap-closing 已经挂上、也就不会再走到这里。 */
+            function alignGapBreathTrough(lineEl, dt, progress) {
+                if (!(dt > 0) || !lineEl) return;
+                // 进度没动 → 不干预（见上面那条 ⚠⚠）
+                if (lineEl.__gapAlignP === progress) return;
+                lineEl.__gapAlignP = progress;
+                const now = performance.now();
+                if (lineEl.__gapAlignT && now - lineEl.__gapAlignT < 150) return;
+                lineEl.__gapAlignT = now;
+                const breath = lineEl.querySelector('.gap-breath');
+                if (!breath || typeof breath.getAnimations !== 'function') return;
+                let anim = null;
+                const list = breath.getAnimations();
+                for (let i = 0; i < list.length; i++) {
+                    // 只认呼吸那条 CSSAnimation；opacity 的 CSSTransition 不算
+                    if (list[i] && list[i].animationName === 'gapBreath') { anim = list[i]; break; }
+                }
+                if (!anim) return;                     // 降级（如 reduced-motion 下 animation:none）
+                let P = parseFloat(getComputedStyle(breath).animationDuration) * 1000;
+                if (!(P > 0)) P = GAP_BREATH_PERIOD_FALLBACK;
+                // 目标是 (currentTime + dt) ≡ 0 (mod P) —— 即 dt 秒后动画正好在 0 相位（波谷）
+                const target = (((-dt * 1000) % P) + P) % P;
+                const cur = (typeof anim.currentTime === 'number') ? anim.currentTime : 0;
+                if (Math.abs(cur - target) < 8) return;   // 已经在位上：不写，避免每帧动它
+                try { anim.currentTime = target; } catch (e) { /* 个别引擎不允许 seek：忽略 */ }
+            }
 
             // 出口的提前量：间奏最后 0.1s —— 三个点缩到 0.8 倍并渐隐，
             // 好让"行合拢"发生在一段空行上（不是一个大圆瘪下去），
@@ -3038,14 +3462,28 @@
                         dots[i].style.setProperty('--lit', lit);
                     }
                 }
-                // 收尾提醒：剩余时间进入 GAP_PULSE_LEAD 就把涨大挂上（一次性的，
+                // 收尾提醒：剩余时间进入自适应提前量就把涨大挂上（一次性的，
                 // 不反复摘挂，否则会打断过渡）。
                 // 出口（缩小+渐隐）同理，只是窗口窄得多。
                 const el = lyricLineElements[lineIdx];
                 const inner = el && el.firstElementChild;
                 if (inner && inner.classList.contains('gap-inner')) {
                     const remain = line.endTime - progress;
-                    if (remain <= GAP_PULSE_LEAD) inner.classList.add('gap-closing');
+                    const lead = gapPulseLead(dur);
+                    if (remain > lead) {
+                        /* 还没进窗口：把呼吸相位拨到"lead 秒后是波谷"，
+                           这样涨大一定从最小点起步（见 alignGapBreathTrough）。
+                           每帧都调是安全的：正常播放时 target 与动画自身推进值
+                           一致 → 差值 < 8ms → 不写入。 */
+                        alignGapBreathTrough(el, remain - lead, progress);
+                    } else if (!inner.classList.contains('gap-closing')) {
+                        /* 进窗口的**第一帧**（用 class 判存在，避免每帧重挂）：
+                           ① 挂涨大标记；
+                           ② ★ 第 56 轮：把呼吸换成更短周期（CSS）× 相位归零
+                              （波谷）→ 保持段里点仍在轻轻起伏。 */
+                        inner.classList.add('gap-closing');
+                        restartGapBreathFromTrough(el);
+                    }
                     if (remain <= GAP_OUT_LEAD) inner.classList.add('gap-out');
                 }
             }
@@ -3122,6 +3560,12 @@
             //      因为 .gap-out 自己声明了 transition，摘掉它的同时过渡声明也消失，
             //      所以 opacity 是**瞬间**回到 1（在已合拢的不可见行里发生，无观感影响）。
             const gapRetractTimers = new Map();
+            // ★ 第 54 轮：取消尚未落地的缩回清理（重新展开时必须调，见 setGapOpen）
+            function cancelGapRetract(lineEl) {
+                if (!lineEl) return;
+                const t = gapRetractTimers.get(lineEl);
+                if (t) { clearTimeout(t); gapRetractTimers.delete(lineEl); }
+            }
             function scheduleGapRetractCleanup(lineEl, inner) {
                 if (!lineEl) return;
                 const prev = gapRetractTimers.get(lineEl);
@@ -3169,18 +3613,108 @@
                 }
             }
 
+            /* ★ 第 54 轮：整组还原 / 整组扫光。
+               原来这两件事都是"对单行"的（resetLineChars / updateActiveLine），
+               同刻组出现后必须按组遍历，否则陪跑行的逐字状态不会被复位、
+               更不会被逐帧点亮（＝"还是只有一句在扫光"）。 */
+            function resetGroupChars(group) {
+                if (!group) return;
+                for (let i = group.start; i <= group.end; i++) resetLineChars(i);
+            }
+
+            /* ★★ 第 55 轮：组内**先唱完的行要收起**，不能一直挂着高亮。
+               病因：`.simul` / `.active` 是按"组"一次性挂上的，只在这一组整体
+               结束（进度跨到下一行）时才换掉 —— 于是对唱里那句已经唱完的歌词
+               会一直亮着、闪闪发光，直到另一句也唱完。
+               现在逐帧对组内每一行独立判定：
+                 · progress ≥ 该行 endTime  → played（收起：模糊 + 变暗 + 缩回）
+                 · 否则是 center（时长最长那句）→ active（放大 + 扫光）
+                 · 否则                      → simul（陪跑：扫光但不放大）
+               写 class 时同步更新 lineClassCache，否则后面的 updateLineClasses
+               会拿着旧缓存做出错误判断。seek 回退时这里也会把它升回去（双向）。 */
+            function syncGroupRowStates(group, progress) {
+                if (!group) return;
+                let dirty = false;
+                for (let i = group.start; i <= group.end; i++) {
+                    const ln = lyricLines[i];
+                    if (!ln) continue;
+                    /* ★ 最后一句歌词唱完之后**不收起**（保持放大 + 高亮）。
+                       歌到这里就结束了，没有"下一句"可以让它让位；把它暗掉/缩回去
+                       只会让画面在结尾忽然空一下。其余各行照旧按 endTime 收起。 */
+                    const isFinalLine = (i === lastLyricLine);
+                    const done = !isFinalLine &&
+                        (typeof ln.endTime === 'number' && isFinite(ln.endTime)) && progress >= ln.endTime;
+                    const want = done ? 1 : (i === group.center ? 2 : 5);
+                    if (lineClassCache[i] === want) continue;
+                    const el = lyricLineElements[i];
+                    if (el) {
+                        const prev = lineClassCache[i];
+                        if (prev) el.classList.remove(LINE_CLASS[prev]);
+                        if (want) el.classList.add(LINE_CLASS[want]);
+                        if (want === 2 && prev !== 2) applyLineFit(el);
+                        /* 组内某一行先唱完、提前收起时也撒一把（与上面同一条件） */
+                        if (want === 1 && prev !== 1) strikeLine(el);
+                        else if (prev === 1 && want !== 1) clearStrike(el);
+                        /* ★ 收起时必须把"抬起的字"放下。
+                           liftChar 写的是**内联** transform（LIFT_REST），
+                           而 CSS 里 `.lyric-line:not(.active):not(.simul) .lyric-char
+                           { transform: none }` 优先级比内联低 —— 不主动清掉的话，
+                           已唱完那行的字会一直悬在半空（整行都暗了、字却还抬着）。
+                           正常路径靠 resetLineChars 里的 dropChar 收尾；组内提前
+                           收起走的是这条快捷路径，所以得自己补一刀。 */
+                        const chars = lyricCharElements[i];
+                        if (chars) {
+                            for (let c = 0; c < chars.length; c++) dropChar(chars[c]);
+                        }
+                        /* 逐字状态也清掉：这一行已收起、之后不再被 updateActiveLine
+                           驱动；留着旧的 state/lit 会让"seek 回退"时从"唱完态"接续，
+                           字不会重新抬起（回退后应当像刚进这一行一样重新扫光）。 */
+                        if (want === 1) {
+                            if (charState[i]) charState[i].fill(0);
+                            if (charLit[i]) charLit[i].fill(-1);
+                        }
+                    }
+                    lineClassCache[i] = want;
+                    dirty = true;
+                }
+                if (dirty) syncTransHeights();
+            }
+
+            function updateActiveGroup(progress) {
+                const g = currentGroup;
+                if (!g) return;
+                syncGroupRowStates(g, progress);      // 先按"各自唱到哪"调整收起/高亮
+                for (let i = g.start; i <= g.end; i++) {
+                    /* ⚠ 已收起（played）的行**不再驱动逐字**。
+                       原因：syncGroupRowStates 刚刚把它的 charState 之外的东西清干净，
+                       而 updateActiveLine 会看到 state 从 0 → 2（错判成"刚起唱"，
+                       因为 prevState 是 0）→ 立刻 liftChar → 已收起那行的字又被抬起来
+                       （实测残留 1 个字悬在半空）。收起就该彻底交给 CSS：
+                       `:not(.active):not(.simul) .lyric-char` 会把扫光层与 transform 一起复位。 */
+                    if (lineClassCache[i] === 1) continue;
+                    updateActiveLine(i, progress);
+                }
+            }
+
             function updateHighlight(activeIndex, forceScroll = false) {
                 if (lyricSwitching) return;   // 换歌过渡期：旧列表的高亮/锚定全部跳过
                 if (!lyricLineElements.length) return;
                 if (activeIndex < 0) activeIndex = 0;
                 if (activeIndex >= lyricLineElements.length) activeIndex = lyricLineElements.length - 1;
 
-                const prevIndex = currentActiveLineIndex;
-                const changed = (prevIndex !== activeIndex);
+                /* ★ 第 54 轮：这里的一切都以**同刻组**为单位（而不是单个行号）。
+                   currentActiveLineIndex 仍维护（等于组的中位行）—— 它是所有
+                   滚动/定位路径共用的"当前句"锚点，"居中点为中间那句"正由此实现。
+                   变更判据必须用"组变没变"，不能用行号：对唱组里两行的
+                   time 不同，进度推进会让 findActiveLineIndex 在组内换行号，
+                   若按行号判变更就会在组内反复重挂 class + 重定位（抖动）。 */
+                const group = groupOfLine(activeIndex);
+                const prevGroup = currentGroup;
+                const changed = !sameGroup(prevGroup, group);
 
                 if (!changed) {
-                    updateActiveLine(activeIndex, currentProgress);
-                    if (forceScroll) scrollToIndex(activeIndex);
+                    updateActiveGroup(currentProgress);
+                    if (forceScroll) scrollToIndex(group.center);
                     return;
                 }
 
@@ -3193,13 +3727,15 @@
                 // 做法：切换前记下当前句主歌词的屏幕位置，切换后同一帧读回，
                 // 把差值一次性写进 scrollTop（同时结算掉在飞的滑动，避免叠加）——
                 // 视觉位置零跳变；过渡中的连续变化随后由 gapScroll 逐帧跟随。
-                const anchorEl = lyricLineElements[activeIndex];
+                // ⚠ 锚点取**中位行**：它是整组的落点，也是被放大的那一行。
+                const anchorEl = lyricLineElements[group.center];
                 const anchorMain = anchorEl ? anchorEl.querySelector('.lyric-main') : null;
                 const anchorRef = anchorMain || anchorEl;
                 const anchorBefore = anchorRef ? anchorRef.getBoundingClientRect().top : null;
 
-                currentActiveLineIndex = activeIndex;
-                updateLineClasses(activeIndex);
+                currentGroup = group;
+                currentActiveLineIndex = group.center;
+                updateLineClasses(group);
 
                 if (anchorBefore != null && anchorRef && lyricScrollEl) {
                     const jump = anchorRef.getBoundingClientRect().top - anchorBefore;
@@ -3211,38 +3747,36 @@
                     }
                 }
 
-                // 上一句整句播完 → 逐字状态还原
-                if (prevIndex >= 0) resetLineChars(prevIndex);
-                // 新的一句从零开始重新长出来
-                resetLineChars(activeIndex);
+                // 上一组整组播完 → 逐字状态还原（整组，不能只还中位行）
+                if (prevGroup) resetGroupChars(prevGroup);
+                // 新的一组从零开始重新长出来
+                resetGroupChars(group);
 
                 // 保险：把所有「不该展开」的等待点行合拢
                 // （跳转、换歌重取歌词之后都不会留下半开/卡住的等待点）
                 for (let k = 0; k < gapLineIndices.length; k++) {
                     const gi = gapLineIndices[k];
-                    if (gi !== activeIndex) setGapOpen(gi, false);
+                    if (gi < group.start || gi > group.end) setGapOpen(gi, false);
                 }
 
-                // 天际屏换句
-                if (lyricLines[activeIndex]) buildBackgroundArt(activeIndex);
+                // 天际屏换句（落点 = 组的中位行，见 buildBackgroundArt）
+                if (lyricLines[group.center]) buildBackgroundArt(group.center);
 
-                updateActiveLine(activeIndex, currentProgress);
+                updateActiveGroup(currentProgress);
 
                 // 等待点行的展开/合拢会在 620ms 内把它下方的歌词整体推移几十像素：
                 // 这时不能用"一次性算好目标的滑动动画"（目标会过期 → 结束后偏几十像素
                 // → 只能再补一次校正，看起来就是过冲）。改为这一段时间里连续跟随居中。
-                const activeIsGap = !!(lyricLines[activeIndex] && lyricLines[activeIndex].isGap);
-                const prevIsGap = !!(prevIndex >= 0 && lyricLines[prevIndex] && lyricLines[prevIndex].isGap);
-                // 翻译展开/折叠（max-height + margin 过渡 0.5s）也会连续改变行高 ——
-                // 与等待点同类：一次性算好的滚动目标会过期，必须逐帧跟随补偿，
-                // 否则切句时滚动终点漂移、看起来就是抖动。
-                const activeHasTrans = !!(lyricLines[activeIndex] && lyricLines[activeIndex].trans);
-                const prevHasTrans = !!(prevIndex >= 0 && lyricLines[prevIndex] && lyricLines[prevIndex].trans);
-                if (activeIsGap || prevIsGap || activeHasTrans || prevHasTrans) {
-                    requestAnimationFrame(() => { if (currentActiveLineIndex === activeIndex) gapScroll(activeIndex); });
-                } else {
-                    requestAnimationFrame(() => scrollToIndex(activeIndex));
-                }
+                // （原先只在"间奏点/译文"时才走跟随，现在所有换句都走 —— 见下面的说明。）
+                /* ★ 换句一律走"跟随通道"（gapScroll），不再一次性算好目标滑动。
+                   实测病因：两句挨得很近时（0.6s 一句），上一句的 780ms 滑动还没跑完
+                   就被下一句打断；被打断留下的残差**没有人补**，那一句就整段停在离
+                   中心几十像素的地方（探针实测 77px），直到下一次换句才"回正"。
+                   一次性目标还有个固有毛病：当前行有 1.4s 的缩放/译文过渡，
+                   落点在动画期间一直在变，动画结束时目标早已过期。
+                   gapScroll 每帧重新量一次目标、并且天然支持"被打断后从当前位置继续追"，
+                   所以无论换句多快，它都能收敛到居中。 */
+                requestAnimationFrame(() => { if (sameGroup(currentGroup, group)) gapScroll(group.center); });
             }
 
             // ==================== 专辑封面 & 取色 ====================
@@ -3255,10 +3789,74 @@
                 loadAlbumArt(picUrl, true);
             }
 
+            /* ===== 封面翻页 =====
+               换歌时封面绕"竖直中线"翻过去：旧封面先转到 -90°（侧对观众、正好看不见），
+               在最窄的那一帧把 src 换成新图，再让它从 +90° 转回 0°。
+               两段都用非线性缓动：出去时加速（ease-in），落回来时减速（ease-out），
+               与页面里其它过渡同一套曲线风格。
+               ★ 转的是**整张卡片**（.np-art：圆角 + 描边环 + 投影），不是里面的 <img>。
+                 只转 img 的话，卡片本体留在原地 —— 旋转过程中会看见一圈静止的边框
+                 和它背后那块渐变底，像"图片在相框里翻"，很出戏。
+               ⚠ perspective 写在 transform 里而不是父级：卡片自己就有 overflow:hidden，
+                 挂父级的 3D 上下文在部分内核里会被压平成 2D（翻页退化成横向压扁）。 */
+            const COVER_FLIP_OUT = 260;
+            const COVER_FLIP_IN = 430;
+            /* 这张卡上**所有**还在压着 transform 的动画。
+               ⚠ 必须是"一组"而不是"一个"：翻页由两段动画接力（转出去 + 转回来），
+                 两段都带 fill:'forwards'。只记最后一段的话，收尾时把第二段 cancel 掉，
+                 第一段的填充值（rotateY(-90deg)，卡片正好侧对观众 = 看不见）
+                 会重新生效 —— 这就是"转完动画封面就没了"的真正原因。 */
+            let coverFlipAnims = [];
+
+            function cancelCoverFlip() {
+                for (let i = 0; i < coverFlipAnims.length; i++) {
+                    try { coverFlipAnims[i].cancel(); } catch (e) { }
+                }
+                coverFlipAnims = [];
+            }
+
+            function flipCover(applySwap) {
+                const card = npArtEl || albumArtEl;
+                const reduce = window.matchMedia &&
+                    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                if (!card || typeof card.animate !== 'function' || reduce) {
+                    applySwap();
+                    return;
+                }
+                cancelCoverFlip();
+                card.style.transform = '';
+
+                const out = card.animate(
+                    [{ transform: 'perspective(1600px) rotateY(0deg) scale(1)' },
+                     { transform: 'perspective(1600px) rotateY(-90deg) scale(0.965)' }],
+                    { duration: COVER_FLIP_OUT, easing: 'cubic-bezier(0.5, 0, 0.9, 0.4)', fill: 'forwards' });
+                coverFlipAnims.push(out);
+                out.onfinish = () => {
+                    applySwap();            // 此刻卡片侧对观众，换图看不见
+                    const inn = card.animate(
+                        [{ transform: 'perspective(1600px) rotateY(90deg) scale(0.965)' },
+                         { transform: 'perspective(1600px) rotateY(0deg) scale(1)' }],
+                        { duration: COVER_FLIP_IN, easing: 'cubic-bezier(0.16, 1, 0.3, 1)', fill: 'forwards' });
+                    coverFlipAnims.push(inn);
+                    /* 先让 inn 接手，再把 out 撤掉：撤掉的那一刻 inn 已经在控 transform，
+                       画面不会跳；而 out 的 fill:forwards 从此不再压在卡片上。 */
+                    try { out.cancel(); } catch (e) { }
+                    coverFlipAnims = coverFlipAnims.filter(function (a) { return a !== out; });
+                    inn.onfinish = () => {
+                        /* 交回 CSS（卡片本身没有 transform 声明，撤掉动画就是 identity）。 */
+                        cancelCoverFlip();
+                        card.style.transform = '';
+                    };
+                };
+            }
+
             // 加载封面：优先带 crossorigin（可取色），失败再去掉 crossorigin 重试（至少能显示）
             function loadAlbumArt(url, withCors) {
                 const handleLoad = () => {
                     albumArtEl.classList.add('visible');
+                    /* 有封面了就撤掉占位图（.np-art 的 ♪ 伪元素）——
+                       否则那块淡音符会在封面圆角外/过渡期间透出来。 */
+                    if (npArtEl) npArtEl.classList.add('has-art');
                     if (!withCors) {
                         // 无 CORS 的图片无法在 canvas 取色 → 用歌名派生的兜底色
                         applyBgColor(fallbackColorFromName(currentSongName));
@@ -3285,18 +3883,32 @@
                         loadAlbumArt(url, false);   // 图床不支持 CORS，退回纯显示
                     } else {
                         albumArtEl.classList.remove('visible');
+                        if (npArtEl) npArtEl.classList.remove('has-art');
                         applyBgColor(fallbackColorFromName(currentSongName));
                     }
                 };
 
-                if (withCors) albumArtEl.setAttribute('crossorigin', 'anonymous');
-                else albumArtEl.removeAttribute('crossorigin');
-                albumArtEl.onload = handleLoad;
-                albumArtEl.onerror = handleError;
-                albumArtEl.src = url;
-
-                // 命中的缓存图片可能不触发 onload
-                if (albumArtEl.complete && albumArtEl.naturalWidth > 0) handleLoad();
+                /* 先把新图预载出来，再开始翻页 —— 否则会在翻到侧面时发现图还没到，
+                   翻转结束露出的是上一张（或空白）。 */
+                const swapIn = () => {
+                    if (withCors) albumArtEl.setAttribute('crossorigin', 'anonymous');
+                    else albumArtEl.removeAttribute('crossorigin');
+                    albumArtEl.onload = handleLoad;
+                    albumArtEl.onerror = handleError;
+                    albumArtEl.src = url;          // 图已在缓存里，这一下几乎不耗时
+                };
+                const pre = new Image();
+                if (withCors) pre.setAttribute('crossorigin', 'anonymous');
+                pre.onload = () => {
+                    const ready = typeof pre.decode === 'function' ? pre.decode().catch(() => { }) : Promise.resolve();
+                    ready.then(() => {
+                        /* 第一张封面（画面上还没有图）直接淡入；之后每次换图才翻页 */
+                        if (albumArtEl.classList.contains('visible')) flipCover(swapIn);
+                        else swapIn();
+                    });
+                };
+                pre.onerror = handleError;
+                pre.src = url;
             }
 
             // 从图片提取主色（需要 CORS 可用，酷狗图床已返回 Access-Control-Allow-Origin: *）
@@ -4035,20 +4647,28 @@
                 bgArtLayerEl.classList.remove('visible');
             }
 
+            /* 天际屏换句。lineIdx 是**同刻组的中位行**（由 updateHighlight 传入）——
+               对唱两句时间戳几乎相同时，天际屏跟的是"中间那句"，
+               与滚动落点一致（原来跟的是"时间戳刚过的某一行"，会在组内乱跳）。 */
             function buildBackgroundArt(lineIdx) {
                 const line = lyricLines[lineIdx];
+                const grp = groupOfLine(lineIdx);
 
-                // 同一句不重复重建（避免闪烁）
-                if (bgCurrentLineIndex === lineIdx && bgArtLayerEl.children.length > 0) return;
+                // 同一句不重复重建（避免闪烁）。★ 用"整组"作去重键，
+                // 见 bgCurrentGroupEnd 的说明。
+                if (bgCurrentLineIndex === lineIdx && bgCurrentGroupEnd === grp.end &&
+                    bgArtLayerEl.children.length > 0) return;
 
                 // 间奏等待点没有歌词文本，但背景要换成"音符图标"（见 createBgChars），
                 // 所以这里不再提前 return，而是走下面统一的交叉过渡路径。
                 if (!line || (!line.text && !line.isGap)) {
                     bgCurrentLineIndex = lineIdx;
+                    bgCurrentGroupEnd = grp.end;
                     clearBgChars();
                     return;
                 }
                 bgCurrentLineIndex = lineIdx;
+                bgCurrentGroupEnd = grp.end;
 
                 // 旧批立刻开始淡出（0.42s），新批在同一时刻就建出来：
                 // 这样新句第一段的浮现时刻 = 它真正被唱到的时刻，
@@ -4292,8 +4912,31 @@
                seq 守卫：切歌时 fetchLyric 可能被状态轮询连续触发，旧的那次
                await 恢复后直接丢弃，防止两次重建交错（这也是"新旧叠加"的来源）。 */
             let applyLyricSeq = 0;
+            /* 画面上现在是不是"没有歌词"占位 → 决定这次空歌词要不要重画。
+               为什么要它：8 秒看门狗每次拉回来还是空的时候，若照常走一遍
+               "淡出 170ms → 重建 → 淡入"，那句"没有歌词"就会每 8 秒闪一下。 */
+            let lyricEmptyShown = false;
+            /* 画面上此刻是"哪份歌词"（主歌词 + 翻译原文）。
+               同一份内容重复落地时直接跳过重建 —— 重拉（看门狗、name 事件、
+               状态轮询）常会拿到完全一样的文本，若每次都走一遍淡出淡入，
+               画面就会莫名其妙地闪。 */
+            let shownLyricText = '', shownTransText = '';
+
             async function applyLyric(lrcText, tlyricText) {
                 const mySeq = ++applyLyricSeq;
+                const nextEmpty = !lrcText || !String(lrcText).trim();
+                const nextTrans = String(tlyricText || '');
+                /* 已经是空歌词、这次又是空 → 直接返回：画面本来就对，不需要任何过渡。 */
+                if (nextEmpty && lyricEmptyShown && lyricLines.length === 0) {
+                    lyricSwitching = false;
+                    return;
+                }
+                /* 内容一字未变 → 也没必要重画。 */
+                if (!nextEmpty && lrcText === shownLyricText && nextTrans === shownTransText &&
+                    lyricLineElements.length > 0) {
+                    lyricSwitching = false;
+                    return;
+                }
                 lyricSwitching = true;                 // 冻结程序化滚动（见 scrollToIndex 顶部说明）
                 freezeScrollNow();                     // 停掉在飞的滚动动画/跟随循环（淡出即静止）
 
@@ -4307,6 +4950,13 @@
 
                 // 解析后插入"间奏等待点"行：空档 > 5s 的地方各插一行 · · ·
                 lyricLines = insertGapLines(parseLyric(lrcText));
+
+                /* 记下最后一句**歌词**（跳过结尾可能出现的间奏点行）：
+                   唱完之后不再收起高亮，别让结尾空一下。 */
+                lastLyricLine = -1;
+                for (let i = lyricLines.length - 1; i >= 0; i--) {
+                    if (!lyricLines[i].isGap) { lastLyricLine = i; break; }
+                }
 
                 // 翻译歌词：把 tlyric 解析成 [{time, text}]，再按时间戳就近对齐到
                 // 主歌词每一行（line.trans）。tlyric 是标准 LRC，用与主歌词相同的
@@ -4327,6 +4977,7 @@
                    不归零的话，旧滚动位置会把新列表顶到中间某处（"抽搐"的另一半来源）。 */
                 lyricScrollEl.scrollTop = 0;
 
+                clearAllStrikes();         // 旧列表的划线一起撤掉
                 lyricListEl.innerHTML = '';
                 lyricLineElements = [];
                 lyricCharElements = [];
@@ -4335,21 +4986,38 @@
                 lineClassCache = [];
                 gapLineIndices = [];
                 currentActiveLineIndex = -1;
+                currentGroup = null;          // 第 54 轮：同刻组索引随列表一起作废
+                lineGroupId = [];
+                lineGroups = [];
                 bgCurrentLineIndex = -1;
+                bgCurrentGroupEnd = -1;       // 第 54 轮：天际屏的"整组"去重键
                 clearBgChars();
+
+                /* ★★ 第 54 轮：重建"同刻歌词组"（对唱）索引。
+                   ⚠ 必须放在**上面这一串复位之后**：复位里有 lineGroupId = [] /
+                     lineGroups = []，放在它之前会被就地清空 —— 分组于是永远不生效
+                     （症状：陪跑行仍是 upcoming-1，不会一起扫光）。
+                   同时必须在建 DOM 之前 —— 创建行元素时就要按组挂终态 class。 */
+                buildLineGroups();
 
                 if (lyricLines.length === 0) {
                     const empty = document.createElement('div');
                     empty.className = 'empty-lyric';
-                    empty.textContent = '暂无歌词';
+                    /* 明确一句话：没有歌词。不再沿用上一首的任何东西。 */
+                    empty.textContent = '没有歌词';
                     lyricListEl.appendChild(empty);
                     lyricLineElements.push(empty);
                     lyricCharElements.push(null);
+                    renderedLyricText = '';
+                    shownLyricText = ''; shownTransText = '';
+                    lyricEmptyShown = true;
                     updateListPadding();
                     lyricSwitching = false;
                     requestAnimationFrame(() => { lyricListEl.style.opacity = '1'; });
                     return;
                 }
+                lyricEmptyShown = false;   // 有真实歌词了，占位状态作废
+                shownLyricText = lrcText; shownTransText = nextTrans;
 
                 /* 新列表的"当前行"索引在创建时就算好：行元素**插入前**就挂上
                    played/active/upcoming 终态 class —— CSS 过渡对首次渲染不生效
@@ -4371,8 +5039,8 @@
                     if (!line.isGap) {
                         if (line.trans) lineEl.classList.add('has-trans');
                         /* 终态 class：插入即最终状态，无 CSS 过渡（见上方说明）。
-                           映射与 updateLineClasses 完全一致。 */
-                        const cls = LINE_CLASS[lineStateCode(li, initialIdx)];
+                           映射与 updateLineClasses 完全一致（含同刻组的陪跑行 .simul）。 */
+                        const cls = LINE_CLASS[lineStateCode(li, groupOfLine(initialIdx))];
                         if (cls) lineEl.classList.add(cls);
                     }
 
@@ -4443,7 +5111,6 @@
 
                 fitLyricFonts();    // 先按容器宽度定字号（会改行高，必须排在下面几项之前）
                 updateListPadding();
-                updateGapWidth();   // 等宽量到后，等待点才知道自己该站哪
 
                 if (playerStatus === 'playing' || playerStatus === 'paused') {
                     /* 先解除冻结再做定位：updateHighlight 的锚定、scrollToIndex
@@ -4453,24 +5120,49 @@
                     lyricSwitching = false;
                     updateHighlight(initialIdx, true);
                     applyProgress(currentProgress);
-                    scrollToIndex(initialIdx, true);   // 换歌后直接定位，不做长距离滚动
+                    // 换歌后直接定位，不做长距离滚动；落点 = 同刻组的中位行
+                    scrollToIndex(groupOfLine(initialIdx).center, true);
                 } else if (lyricLineElements.length > 0) {
                     lyricSwitching = false;
                     updateHighlight(0, false);
                     scrollToIndex(0, true);
                 }
 
-                // ---- ③ 淡入新列表（定位已完成，交叉淡变收尾）----
-                if (mySeq !== applyLyricSeq) return;
-                lyricListEl.style.transition = 'opacity 0.3s ease';
-                requestAnimationFrame(() => {
+                /* ---- ③ 淡入新列表 ----
+                   ★ 等等再淡入：切歌那一刻本地时钟刚被 resetClock() 归零，
+                     而权威进度（/status、SSE 的 progress）通常还没回来。
+                     如果这时候就淡入，列表会先停在第 1 行、等进度到了再"窜"到
+                     中间那一行 —— 用户看到的就是整屏歌词猛地上下跳一下。
+                     所以：先保持透明，等 clockInit（收到过权威进度）再把落点钉死、
+                     然后才淡入。最多等 900ms，等不到就按现有进度先显示（离线兜底）。 */
+                const revealStart = performance.now();
+                const reveal = (first) => {
                     if (mySeq !== applyLyricSeq) return;
-                    lyricListEl.style.opacity = '1';
-                    /* 落地后复核：确认画面上的歌词确实属于"此刻正在播的那首歌"。
-                       延迟一拍（等 name 事件那一批状态都处理完）再查，
-                       避免在切歌事件流中间误判成"还没换成新歌"而多发一次请求。 */
-                    setTimeout(recheckLyricOwnership, 400);
-                });
+                    const waiting = (playerStatus === 'playing' || playerStatus === 'paused') && !clockInit;
+                    if (waiting && performance.now() - revealStart < 900) {
+                        requestAnimationFrame(() => reveal(false));
+                        return;
+                    }
+                    /* 幂等对齐：把落点直接钉到当前进度所在行（此刻画面还是透明的，
+                       所以哪怕跨了几百像素也看不见）。重复调用不会产生额外跳动。 */
+                    const idx = findActiveLineIndex(currentProgress);
+                    if (idx >= 0 && lyricLineElements.length) {
+                        lyricSwitching = false;
+                        updateHighlight(idx, true);
+                        const tgt = activeLineScrollTarget(groupOfLine(idx).center);
+                        if (tgt != null) jumpScrollTo(tgt);
+                    }
+                    lyricListEl.style.transition = 'opacity 0.3s ease';
+                    requestAnimationFrame(() => {
+                        if (mySeq !== applyLyricSeq) return;
+                        lyricListEl.style.opacity = '1';
+                        /* 落地后复核：确认画面上的歌词确实属于"此刻正在播的那首歌"。
+                           延迟一拍（等 name 事件那一批状态都处理完）再查，
+                           避免在切歌事件流中间误判成"还没换成新歌"而多发一次请求。 */
+                        setTimeout(recheckLyricOwnership, 400);
+                    });
+                };
+                reveal(true);
             }
 
             /* 歌词拉取的代次守卫：每一次"目标歌变了"都自增。
@@ -4511,10 +5203,17 @@
                         }
 
                         /* ★ 归属校验：这份歌词真的是"我刚请求的那首歌"的吗？
-                           不匹配说明洛雪此刻还在返回上一首（切歌尚未完成），
-                           稍等再试；试用完仍在错配，就接受现状（有词总比空着好，
-                           而且下一次 name 事件/状态轮询会再触发一次拉取）。 */
-                        if (lrcText && lrcText.trim() &&
+                           不匹配说明洛雪此刻还在返回上一首（切歌尚未完成），稍等再试。
+                           ⚠ 重试用尽仍不符时**必须清空**，不能保留旧画面：
+                             洛雪在"新歌没有歌词/还没加载好"的时候，/lyric-all 会一直
+                             回上一首的词 —— 这时画面若继续挂着上一首的歌词，
+                             用户看到的就是"歌换了、词还是上一首"，而且毫无提示。
+                           ⚠⚠ 但**单句歌词不参与这个判定**：像"纯音乐，请欣赏"这种
+                             占位词，洛雪给的 [ti:] 往往就是这句话本身（跟歌名当然对不上），
+                             一句词也不携带"它属于哪首歌"的信息。为它清屏，等于把
+                             一首确实"有词"的纯音乐显示成"没有歌词"。 */
+                        const lyricIsSingleLine = countTimedLines(lrcText) <= 1;
+                        if (lrcText && lrcText.trim() && !lyricIsSingleLine &&
                             !lyricMatchesSong(lrcText, targetName, targetSinger)) {
                             const id = parseLrcIdentity(lrcText);
                             console.warn('[歌词] 归属不符，丢弃该响应',
@@ -4525,10 +5224,17 @@
                                 await new Promise(r => setTimeout(r, LYRIC_RETRY_DELAY));
                                 continue;                      // 重取
                             }
-                            /* 重试用尽仍不符：不把明显属于别人的歌词贴上去 ——
-                               宁可保留当前画面（可能是空/上一首也在等下一轮纠正），
-                               避免"确定是错的歌词"被当成对的显示。 */
+                            /* 重试用尽：明确切到"没有歌词"。
+                               下一次 name 事件 / 状态轮询 / 8 秒看门狗还会再拉一次，
+                               洛雪追上来自动恢复。 */
+                            renderedLyricText = '';
+                            applyLyric('', '');
                             return;
+                        }
+                        if (lyricIsSingleLine && lrcText && lrcText.trim() &&
+                            !lyricMatchesSong(lrcText, targetName, targetSinger)) {
+                            console.info('[歌词] 只有一句（多为纯音乐占位），标签不符也照常显示',
+                                JSON.stringify(parseLrcIdentity(lrcText)));
                         }
 
                         // 翻译歌词（tlyric）：与主歌词同一时间轴。
@@ -4675,6 +5381,9 @@
 
             function recheckLyricOwnership() {
                 if (!renderedLyricText) return;                     // 还没有内容，不干预
+                /* 单句歌词（纯音乐占位之类）不参与归属复核 —— 否则每 1.5s 重拉一次，
+                   画面跟着淡出淡入，看着就是"每隔一会儿闪一下"。 */
+                if (countTimedLines(renderedLyricText) <= 1) return;
                 const now = performance.now();
                 if (now - lastLyricRecheckAt < LYRIC_RECHECK_MIN_GAP) return;
                 if (lyricMatchesSong(renderedLyricText, currentSongName, currentSinger)) return;
@@ -4896,7 +5605,7 @@
             //   · 指针捕获（setPointerCapture）在个别环境会抛错或静默失效；
             //   · 即便捕获成功，横向拖长条时指针纵向漂出元素也很常见。
             // 一旦 pointerup 落在元素外收不到，状态位就会永远停在「拖动中」，
-            // 进度条此后被 updateProgressUI 里的 `if (seeking) return` 冻住，只剩点击能用
+            // （拖动功能已删：进度条的 --p 完全由本地时钟驱动，用户改不了）
             // （这正是"拖不动、只能点"的成因）。挂到 window 后抬手必然收得到；
             // 另外补 mousemove / mouseup 兜底（极少数环境只投递鼠标事件不投递指针事件），
             // 两种事件重复到达对结果无副作用（同一坐标写同一个值）。
@@ -4984,24 +5693,37 @@
             // ==================== 进度条：拖 / 点定位 ====================
             // 拖动过程只动本地 UI（填充、滑块、时间文本），松手才发一次 /seek，
             // 否则每一像素都是一次请求。offset 传绝对秒数。
+            /* 拖动中的预览：只改画面，不提交。
+               ⚠ 此时 updateProgressUI 会因为 seeking 整体早退，所以 --p 和两端时间
+                 必须在这里自己画；同时把逐字/高亮也推到那个位置 ——
+                 拖的时候整屏跟着走，松手只是"确认"，落地瞬间不会跳。 */
             function renderSeekPreview(sec) {
+                if (!seekWrapEl) return;
                 seekPreviewSec = sec;
-                if (trackDuration > 0) {
-                    seekWrapEl.style.setProperty('--p', (sec / trackDuration).toFixed(5));
+                const usable = trackDuration > 0;
+                const f = usable ? Math.max(0, Math.min(1, sec / trackDuration)) : 0;
+                seekWrapEl.style.setProperty('--p', f.toFixed(5));
+                const s = Math.floor(Math.max(0, sec));
+                shownSec = s;
+                shownDur = Math.round(trackDuration);
+                if (progressCurEl) progressCurEl.textContent = fmtTime(s);
+                if (progressDurEl) progressDurEl.textContent = usable ? fmtTime(shownDur) : '0:00';
+                if (seekTrackEl) {
+                    seekTrackEl.setAttribute('aria-valuenow', String(s));
+                    seekTrackEl.setAttribute('aria-valuetext',
+                        fmtTime(s) + ' / ' + (usable ? fmtTime(shownDur) : '0:00'));
                 }
-                if (progressCurEl) progressCurEl.textContent = fmtTime(Math.max(0, sec));
+                applyProgress(sec);
             }
 
+            /* 松手（或键盘）提交：把播放器挪到目标位置。
+               先本地落地再发请求 —— /seek 是请求-响应，等它回来 UI 会顿一下。 */
             function commitSeek(sec) {
                 if (!seekUsable) return;
-                // 末尾留 50ms：服务端校验 offset <= duration，越界会直接 400
                 const target = Math.max(0, Math.min(trackDuration - 0.05, sec));
-                // 本地时钟立刻对齐 —— 歌词高亮、滚动、逐字扫光、天际屏同时到位，
-                // 不用等 SSE 那 250ms，拖完那一瞬间就是准的
                 clockPos = target;
                 lastClockT = nowSec();
                 clockTrim = 0;
-                clockInit = true;
                 targetProgress = target;
                 currentProgress = target;
                 resyncBgReveals(target);
@@ -5054,8 +5776,19 @@
                 if (btnMuteEl) btnMuteEl.classList.toggle('muted', muted);
             }
 
-            // 拖动 / 点击音量条：ratio(0~1) → 音量(1~100)。
-            // onMove 阶段只更新本地 UI + 防抖发送；键盘或松手时 immediate=true 立刻发。
+            /* 拖动 / 点击音量条：ratio(0~1) → 音量(1~100)。
+               ★ 拖动过程中就**实时下发**（节流 90ms），不是等松手才发。
+                 旧实现是 180ms 的尾随防抖：连续拖动时每停顿一下才发一次，
+                 听感上就是"拖到别的音量了，声音过一会儿才跳过去"，一格一格的。
+                 90ms ≈ 11 次/秒，本地 HTTP 完全吃得下；同一次拖动里值没变则去重不发。 */
+            const VOLUME_SEND_GAP = 90;
+            let volumeSentAt = -1e9;
+
+            function flushVolumeSend() {
+                if (volumeSendTimer) { clearTimeout(volumeSendTimer); volumeSendTimer = null; }
+                sendVolume();
+            }
+
             function setVolumeFromRatio(r, immediate) {
                 const v = Math.max(1, Math.min(100, 1 + Math.round(r * 99)));
                 if (v !== volumeValue) {
@@ -5063,17 +5796,13 @@
                     if (muted) muted = false;       // 动手调音量即视为解除静音
                 }
                 renderVolumeUI();
-                if (immediate) {
-                    if (volumeSendTimer) { clearTimeout(volumeSendTimer); volumeSendTimer = null; }
+                if (immediate) { flushVolumeSend(); return; }
+                const wait = Math.max(0, VOLUME_SEND_GAP - (performance.now() - volumeSentAt));
+                if (volumeSendTimer) clearTimeout(volumeSendTimer);
+                volumeSendTimer = setTimeout(() => {
+                    volumeSendTimer = null;
                     sendVolume();
-                } else {
-                    // 防抖 180ms：连续拖动只在停顿处发一次
-                    if (volumeSendTimer) clearTimeout(volumeSendTimer);
-                    volumeSendTimer = setTimeout(() => {
-                        volumeSendTimer = null;
-                        sendVolume();
-                    }, 180);
-                }
+                }, wait);
             }
 
             function bindVolumeBar() {
@@ -5089,8 +5818,7 @@
                     },
                     onEnd: () => {
                         volDragging = false;
-                        if (volumeSendTimer) { clearTimeout(volumeSendTimer); volumeSendTimer = null; }
-                        sendVolume();
+                        flushVolumeSend();      // 松手立刻补发最终值（节流可能还压着一次）
                     }
                 });
             }
@@ -5100,7 +5828,8 @@
             function sendVolume() {
                 if (volumeValue === lastSentVolume) return;
                 lastSentVolume = volumeValue;
-                ctrlPendingUntil = performance.now() + 900;
+                volumeSentAt = performance.now();
+                ctrlPendingUntil = volumeSentAt + 900;
                 ctrlFetch(ctrlVolume(volumeValue));
             }
 
@@ -5150,8 +5879,8 @@
                 if (btnPrevEl) btnPrevEl.addEventListener('click', skipPrev);
                 if (btnMuteEl) btnMuteEl.addEventListener('click', toggleMute);
                 if (btnCollectEl) btnCollectEl.addEventListener('click', toggleCollect);
-                bindSeekBar();
                 bindVolumeBar();
+                bindSeekBar();
 
                 setPlayingUI(playerStatus === 'playing');
                 renderVolumeUI();
@@ -5159,79 +5888,9 @@
                 renderStatusBadge();
             }
 
-            // ==================== 液态玻璃：高光跟随指针 ====================
-            // 只写 --mx / --my 两个自定义属性，几何换算交给 CSS 的 radial-gradient(at …)；
-            // 用 rAF 节流，一帧最多一次写入（读 rect 不触发布局，因为只改了自定义属性）。
-            function bindGlassSheen() {
-                const dock = document.getElementById('playerDock');
-                if (!dock) return;
-                let raf = 0, cx = 0, cy = 0;
-                const apply = () => {
-                    raf = 0;
-                    const r = dock.getBoundingClientRect();
-                    if (!r.width) return;
-                    // 限制在玻璃范围内，避免指针快出边界时高光跑飞
-                    const x = Math.min(Math.max(cx - r.left, 0), r.width);
-                    const y = Math.min(Math.max(cy - r.top, 0), r.height);
-                    dock.style.setProperty('--mx', x.toFixed(1) + 'px');
-                    dock.style.setProperty('--my', y.toFixed(1) + 'px');
-                };
-                dock.addEventListener('pointermove', (e) => {
-                    cx = e.clientX; cy = e.clientY;
-                    cancelReset();                       // 指针回来了：取消待复位
-                    if (!raf) raf = requestAnimationFrame(apply);
-                }, { passive: true });
-
-                /* ★★ 第 53 轮：离开时**不要立刻**把 --mx/--my 清掉。
-                   高光层 `.s-follow` 是"hover → opacity 1；离开 → 0.45s 淡出"，
-                   而清掉变量会让 radial-gradient 的圆心**立刻跳回 50% 50%（正中央）**
-                   —— 于是在这 0.45s 的淡出过程里，用户看到高光"唰地闪到中间再消失"
-                   （用户反馈的"瞬间复位 → 视觉闪烁"就是这个）。
-                   改成：离开时**留在原位**（保留最后一次写入的坐标，既不写也不删），
-                   等淡出真正结束再复位。复位必须发生在**不可见之后**，所以：
-                     · 优先等 `.s-follow` 的 opacity `transitionend`；
-                     · 再加 520ms 兜底（reduced-motion 下没有过渡 / 极快出入时
-                       transitionend 可能不触发）；
-                     · 复位前复查 opacity —— 期间指针已经回来（高光又亮起来）就不复位；
-                     · pointermove / pointerenter 一律取消待复位，否则高光会突然跳回中心。 */
-                const sheenFollow = dock.querySelector('.lg-sheen .s-follow');
-                let resetTimer = 0;
-                const doReset = () => {
-                    resetTimer = 0;
-                    dock.style.removeProperty('--mx');
-                    dock.style.removeProperty('--my');
-                };
-                const cancelReset = () => { if (resetTimer) { clearTimeout(resetTimer); resetTimer = 0; } };
-                const reset = () => {
-                    if (raf) { cancelAnimationFrame(raf); raf = 0; }   // 丢弃最后一个未落的写入
-                    cancelReset();
-                    if (!sheenFollow) { doReset(); return; }           // 找不到层就退回旧行为
-                    if (parseFloat(getComputedStyle(sheenFollow).opacity) <= 0.01) {
-                        doReset();                                     // 本来就不可见：无需等待
-                        return;
-                    }
-                    const finish = () => {
-                        sheenFollow.removeEventListener('transitionend', onEnd);
-                        cancelReset();
-                        // 指针已经回到控件上（高光重新亮起）→ 不复位，交回给 pointermove
-                        if (parseFloat(getComputedStyle(sheenFollow).opacity) > 0.01) return;
-                        doReset();
-                    };
-                    const onEnd = (e) => {
-                        if (e.target !== sheenFollow || e.propertyName !== 'opacity') return;
-                        finish();
-                    };
-                    sheenFollow.addEventListener('transitionend', onEnd);
-                    resetTimer = setTimeout(finish, 520);   // 0.45s 过渡 + 余量
-                };
-                dock.addEventListener('pointerleave', reset);
-                dock.addEventListener('pointercancel', reset);
-                dock.addEventListener('pointerenter', cancelReset);
-            }
-
             // ==================== 控件变淡：指针不在控件上就淡下去 ====================
             // 判定只有一条依据：指针是否落在播放控件 / 连接状态条的矩形内。
-            //   在内 → 恢复正常亮度；不在 → 降到 0.42（CSS 的 .dock-wrap.idle）。
+            //   在内 → 恢复正常亮度；不在 → 降到 0.42（CSS 的 .player-col.idle）。
             // 用「缓存矩形 + 比较坐标」而不是 elementFromPoint / :hover：
             //   · .conn-bar 是 pointer-events:none，:hover 在它身上永远不成立；
             //   · 比较坐标零布局开销（矩形只在 resize 与入场动画结束时重取）。
@@ -5293,192 +5952,11 @@
             // 背景图片：2026-09-23 起不再自动读取同目录的 backpicture.jpg，
             // 只使用 WE 面板「自定义背景图」里选的图（we-glue.js 的 syncPhoto 负责）。
 
-            /* ==================== 液态玻璃：边缘折射（SVG 位移滤镜） ====================
-               移植自 shuding/liquid-glass（用户提供的参考实现）：
-               canvas 逐像素生成"位移贴图"（圆角矩形 SDF → 越靠边采样越向中心收缩 =
-               透镜放大），feImage 装载贴图、feDisplacementMap 按贴图 R/G 位移背景，
-               再以 backdrop-filter: url(#filter) 作用在控件上 —— 边缘是真·折射。
-               兼容性：url() 引用在 Chromium 有效；若宿主不支持，这条行内声明整体
-               失效并回落到样式表里的毛玻璃（blur/saturate 那套），不会更糟。
-               ResizeObserver 防抖重建贴图（控件是响应式宽度）。 */
-            function attachLiquidGlass() {
-                const el = document.getElementById('playerDock');
-                if (!el) return;
-                let svgId = null, canvas = null, ctx = null, feImage = null, feDisp = null, filterEl = null;
-                let feSat = null, feTrans = null, feFuncR = null, feFuncG = null, feFuncB = null;
-                let ro = null, roTimer = 0;
-
-                function smoothStep(a, b, t) {
-                    t = Math.max(0, Math.min(1, (t - a) / (b - a)));
-                    return t * t * (3 - 2 * t);
-                }
-                function len(x, y) { return Math.sqrt(x * x + y * y); }
-                /* 圆角矩形 SDF：内部为负、边界 0、外部为正 */
-                function roundedRectSDF(x, y, w, h, r) {
-                    const qx = Math.abs(x) - w + r;
-                    const qy = Math.abs(y) - h + r;
-                    return Math.min(Math.max(qx, qy), 0) + len(Math.max(qx, 0), Math.max(qy, 0)) - r;
-                }
-
-                function ensureFilter() {
-                    if (svgId) return;
-                    svgId = 'lg-dock-' + Math.floor(Math.random() * 1e6).toString(36);
-                    const NS = 'http://www.w3.org/2000/svg';
-                    const svg = document.createElementNS(NS, 'svg');
-                    svg.setAttribute('width', '0');
-                    svg.setAttribute('height', '0');
-                    svg.style.cssText = 'position:fixed;left:0;top:0;pointer-events:none;';
-                    const defs = document.createElementNS(NS, 'defs');
-                    filterEl = document.createElementNS(NS, 'filter');
-                    filterEl.setAttribute('id', svgId + '_f');
-                    filterEl.setAttribute('filterUnits', 'userSpaceOnUse');
-                    filterEl.setAttribute('colorInterpolationFilters', 'sRGB');
-                    feImage = document.createElementNS(NS, 'feImage');
-                    feImage.setAttribute('result', 'map');
-                    feDisp = document.createElementNS(NS, 'feDisplacementMap');
-                    feDisp.setAttribute('in', 'SourceGraphic');
-                    feDisp.setAttribute('in2', 'map');
-                    feDisp.setAttribute('xChannelSelector', 'R');
-                    feDisp.setAttribute('yChannelSelector', 'G');
-                    feDisp.setAttribute('result', 'disp');
-                    /* 折射完再做饱和/提亮 —— 玻璃"透出的色彩被活化"，正是液态玻璃
-                       与普通透明玻璃的观感差别。参数吃 WE 面板的两个滑条
-                       （--we-glass-sat / --we-glass-bright，rebuild 时写入）。 */
-                    feSat = document.createElementNS(NS, 'feColorMatrix');
-                    feSat.setAttribute('in', 'disp');
-                    feSat.setAttribute('type', 'saturate');
-                    feSat.setAttribute('result', 'sat');
-                    feTrans = document.createElementNS(NS, 'feComponentTransfer');
-                    feTrans.setAttribute('in', 'sat');
-                    feFuncR = document.createElementNS(NS, 'feFuncR');
-                    feFuncG = document.createElementNS(NS, 'feFuncG');
-                    feFuncB = document.createElementNS(NS, 'feFuncB');
-                    [feFuncR, feFuncG, feFuncB].forEach(function (f) {
-                        f.setAttribute('type', 'linear');
-                        f.setAttribute('slope', '1.06');
-                        f.setAttribute('intercept', '0');
-                        feTrans.appendChild(f);
-                    });
-                    filterEl.appendChild(feImage);
-                    filterEl.appendChild(feDisp);
-                    filterEl.appendChild(feSat);
-                    filterEl.appendChild(feTrans);
-                    defs.appendChild(filterEl);
-                    svg.appendChild(defs);
-                    document.body.appendChild(svg);
-                    canvas = document.createElement('canvas');
-                    ctx = canvas.getContext('2d');
-                }
-
-                function rebuild() {
-                    const w = Math.max(8, Math.round(el.clientWidth));
-                    const h = Math.max(8, Math.round(el.clientHeight));
-                    if (!w || !h) return;
-                    ensureFilter();
-
-                    filterEl.setAttribute('x', '0');
-                    filterEl.setAttribute('y', '0');
-                    filterEl.setAttribute('width', String(w));
-                    filterEl.setAttribute('height', String(h));
-                    feImage.setAttribute('width', String(w));
-                    feImage.setAttribute('height', String(h));
-                    canvas.width = w;
-                    canvas.height = h;
-
-                    /* fragment：圆角矩形 SDF → 折射带内采样坐标向中心收缩。
-                       强度刻意压小（scaled 最低 0.945）：边缘最多缩 5.5%（长边 ~30px、
-                       短边 ~2.5px），配合 28px 的平滑过渡带 —— 折射是"渐入"的，
-                       没有一条可见的起始线。之前的问题是位移开满（scale 211）+
-                       环内滤镜突变，边界感很重。 */
-                    const BAND = 28, R = 26, K = 0.055;
-                    const img = ctx.createImageData(w, h);
-                    const raw = new Float32Array(w * h * 2);
-                    let maxScale = 0, k = 0;
-                    for (let y = 0; y < h; y++) {
-                        for (let x = 0; x < w; x++) {
-                            const ix = x - w / 2, iy = y - h / 2;
-                            const d = roundedRectSDF(ix, iy, w / 2 - BAND, h / 2 - BAND, R);
-                            const displacement = smoothStep(0.8, 0, d / BAND - 0.15);
-                            const smooth = smoothStep(0, 1, displacement);
-                            const scaled = 1 - K * (1 - smooth);
-                            /* 采样点（归一化）：中心不动、越靠边越向中心收 */
-                            const tx = (ix * scaled) / (w / 2) + 0.5;
-                            const ty = (iy * scaled) / (h / 2) + 0.5;
-                            const dx = tx * w - x, dy = ty * h - y;
-                            raw[k++] = dx; raw[k++] = dy;
-                            const a = Math.abs(dx), b = Math.abs(dy);
-                            if (a > maxScale) maxScale = a;
-                            if (b > maxScale) maxScale = b;
-                        }
-                    }
-                    /* maxScale = 场的真实最大位移（不乘 0.5、不 clamp）：
-                       贴图值域恰好 0~1、feDisp scale=maxScale → offset=dx 精确还原，
-                       之前"位移开满 + 归一半量"的写法会让大位移像素被 clamp 出怪图案。 */
-                    if (maxScale < 0.5) maxScale = 0.5;
-
-                    let j = 0;
-                    for (let i = 0; i < img.data.length; i += 4) {
-                        img.data[i] = (raw[j++] / maxScale + 0.5) * 255;
-                        img.data[i + 1] = (raw[j++] / maxScale + 0.5) * 255;
-                        img.data[i + 2] = 0;
-                        img.data[i + 3] = 255;
-                    }
-                    ctx.putImageData(img, 0, 0);
-                    feImage.setAttributeNS('http://www.w3.org/1999/xlink', 'href', canvas.toDataURL());
-                    feDisp.setAttribute('scale', String(maxScale));
-
-                    /* 饱和/亮度：从根元素的 CSS 变量读（we-glue 的属性面板在写）。
-                       这两个滑条曾经只活在 backdrop-filter 链里，折射接管后失效过；
-                       现在烘进滤镜原语，「玻璃透出的饱和度 / 亮度」重新生效。 */
-                    try {
-                        const rootCs = getComputedStyle(document.documentElement);
-                        const sat = parseFloat(rootCs.getPropertyValue('--we-glass-sat'));
-                        const bright = parseFloat(rootCs.getPropertyValue('--we-glass-bright'));
-                        feSat.setAttribute('values', String(isFinite(sat) && sat > 0 ? sat : 1.9));
-                        const slope = String(isFinite(bright) && bright > 0 ? bright : 1.06);
-                        feFuncR.setAttribute('slope', slope);
-                        feFuncG.setAttribute('slope', slope);
-                        feFuncB.setAttribute('slope', slope);
-                    } catch (e) { }
-
-                    /* 行内声明：**只有 url() 一条** —— 液态玻璃（位移折射），无 blur。
-                       ① 悬停/移出**永远是这一条**，不做任何切换（之前 idle 切纯 blur
-                          的方案已按需求删除 —— 两种效果来回切非常割裂）；
-                       ② 之前 url() + idle 半透明会重影，根因是"玻璃元素自身
-                          opacity<1"让原始背景透出来 —— 现在玻璃 opacity 恒为 1
-                          （变淡拆到内容层/暗纱/棱环上做，见 CSS"变淡"节），全程干净；
-                       ③ 宿主不支持 url() 时这条整体无效，回落到样式表的
-                          saturate/brightness（同样无 blur）。 */
-                    const bf = 'url(#' + svgId + '_f)';
-                    el.style.backdropFilter = bf;
-                    el.style.webkitBackdropFilter = bf;
-                }
-
-                function scheduleRebuild() {
-                    if (roTimer) clearTimeout(roTimer);
-                    roTimer = setTimeout(() => { roTimer = 0; rebuild(); }, 90);
-                }
-
-                rebuild();
-                /* 属性面板改了玻璃的饱和/亮度 → we-glue 派发事件 → 重建滤镜参数
-                   （贴图不用重画，但 rebuild 里顺带刷新，代价可忽略） */
-                window.addEventListener('we-glass-params', scheduleRebuild);
-                if (window.ResizeObserver) {
-                    ro = new ResizeObserver(scheduleRebuild);
-                    ro.observe(el);
-                } else {
-                    window.addEventListener('resize', scheduleRebuild);
-                }
-                window.addEventListener('load', scheduleRebuild);
-            }
-
             function init() {
                 fillEndpointInfo();
                 bindPlayerControls();
-                bindGlassSheen();
-                attachLiquidGlass(); // 液态玻璃：SVG 位移滤镜的边缘折射（shuding/liquid-glass 方案）
                 bgShaderInit();      // 动态背景（WebGL + fBm）；无 WebGL 则退回主色渐变
-                bindDockDim();
+                bindDockDim();       // 指针不在控件上时淡出（面板可关，默认关）
                 fetchLyric(true).catch(() => {});
                 fetchStatus().catch(() => {});
                 initSSE();
@@ -5499,7 +5977,6 @@
                         resizeTimer = null;
                         fitLyricFonts();    // 宽度/断点变了 → 长歌词的字号重新适配
                         updateListPadding();
-                        updateGapWidth();   // 字号/宽度随断点变化，等待点要重新落位
                         syncTransHeights(); // 字号/宽度变了 → 译文高度变了，重新量精确高度
                         // gapFollow 跟随期间它自己每帧都在写最新目标，别人再写 scrollTop 会打架
                         if (currentActiveLineIndex >= 0 && !gapFollow) scrollToIndex(currentActiveLineIndex);

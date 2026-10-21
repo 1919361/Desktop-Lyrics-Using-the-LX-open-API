@@ -40,7 +40,7 @@
         artOn: true, artOpacity: 1, artColor: '0.7843 0.8627 1',
         /* 歌词 */
         lyricScale: 1, activeScale: 2, dimK: 1,
-        align: 'center', padX: null, lineHeight: null,
+        padX: null, lineHeight: null,
         /* 字体：一套设置同时管「歌词」和「天际屏背景字」，由 fontTarget 决定作用范围 */
         fontFamily: 'system', fontCustomOn: true, fontTarget: 'both',
         sweep: true, charDim: 0.28, glow: 1, gapOn: true,
@@ -48,8 +48,7 @@
         transOn: true, transScale: 0.3, transOpacity: 0.85, transColor: '1 1 1',
         /* 播放控件 */
         uiScale: 1, lift: 0,
-        glassBlur: 24, glassSat: 1.85, glassBright: 1.06, glassRadius: 26,
-        sheen: true, dimOn: true, dimOp: 0.42,
+        dimOn: false, dimOp: 0.42,
         chipOn: true, volumeOn: true, collectOn: true,
         /* 连接 */
         host: '127.0.0.1', port: '23330',
@@ -473,35 +472,6 @@
         return head + ', ' + FONT_TAIL;
     }
 
-    /* 切换「水平对齐」的过渡动画（FLIP）：
-       align-items / justify-content 是离散属性，直接切换 = 整面歌词瞬间平移。
-       这里在写新变量**前**量一次每行的屏幕位置，新布局生效后再量一次，
-       把差值用一次性 WAAPI 动画滑回去 —— composite:'add' 叠加在行自身的
-       transform（当前行的缩放）之上，互不破坏。滑动 ~0.48s，跟手不拖沓。 */
-    var lastAlign = null;
-    function flipAlignRows(oldLefts) {
-        if (!oldLefts || !document.getElementById('lyricList')) return;
-        requestAnimationFrame(function () {
-            requestAnimationFrame(function () {
-                var list = document.getElementById('lyricList');
-                if (!list) return;
-                var rows = list.querySelectorAll('.lyric-line');
-                for (var i = 0; i < rows.length; i++) {
-                    var el = rows[i];
-                    if (oldLefts[i] == null) continue;
-                    var dx = el.getBoundingClientRect().left - oldLefts[i];
-                    if (Math.abs(dx) < 2) continue;
-                    try {
-                        el.animate(
-                            [{ transform: 'translateX(' + (-dx).toFixed(1) + 'px)' },
-                             { transform: 'translateX(0px)' }],
-                            { duration: 480, easing: 'cubic-bezier(0.22, 1, 0.32, 1)', composite: 'add' });
-                    } catch (e) { }
-                }
-            });
-        });
-    }
-
     function apply() {
         /* ---- 背景图 ---- */
         /* 整串 filter 一起拼：对比度为 1 时省掉那一项，默认外观就和原版一模一样。
@@ -532,55 +502,12 @@
         setVar('--we-lyric-scale', String(S.lyricScale));
         setVar('--we-active-scale', String(S.activeScale));
         setVar('--we-dim-k', String(S.dimK));
-        /* 水平对齐要一路贯穿到 6 个消费点，缺一个就是"对齐了但没对齐干净"：
-           list   —— 行盒子在列表里的横向位置（align-items）
-           text   —— text-align（行内普通文本，如等待点兜底）
-           main   —— 逐字排布层 .lyric-main 的 justify-content（页面写死了 center，
-                     长句换行后的短行全都居中 —— 左/右对齐"对不齐"的主因就是它）
-           origin —— 当前行放大的 transform-origin（缩放要往对齐边反方向长，
-                     左对齐时从中心放大就会把左半推出屏幕）
-           gap    —— 间奏点在盒子内的锚边（左对齐钉左、右对齐钉右）
-           items  —— 行内子元素（主歌词/翻译）的横向对齐（翻译要贴对齐边） */
-        /* 对齐真变了才做 FLIP 过渡（首次加载 / 其它属性变化不触发） */
-        var oldLefts = null;
-        var _list = document.getElementById('lyricList');
-        if (lastAlign !== null && lastAlign !== S.align &&
-            _list && _list.children.length) {
-            oldLefts = [];
-            var _rows = _list.querySelectorAll('.lyric-line');
-            for (var _i = 0; _i < _rows.length; _i++) {
-                oldLefts.push(_rows[_i].getBoundingClientRect().left);
-            }
-        }
-        lastAlign = S.align;
-
-        /* ★ 第 51 轮：点团节距取整后，团心 = 18px + 0.15em + 1 个节距
-           （节距 = 0.3em 点径 + 间距，取整到整数 px；详见 index.html 的 .gap-breath）。
-           ⚠ 必须探测能力再决定表达式：round() 是较新的 CSS 函数（Chromium 106+），
-             把 round() 直接塞进变量值，在不支持的引擎里会让 transform-origin 变成
-             invalid-at-computed-value-time，**回落到初始值 50% 50%** ——
-             那比不改更糟（缩放锚到盒子中心，呼吸/放大时整团左右甩）。
-             不支持时退回第 50 轮的 0.6233em（口径正确，只是节距未取整）。 */
-        var ROUND_OK = !!(window.CSS && CSS.supports && CSS.supports('width', 'round(nearest, 1px, 1px)'));
-        var GAP_HALF = ROUND_OK ? 'calc(18px + 0.15em + round(nearest, 0.4733em, 1px))'
-                                : 'calc(18px + 0.6233em)';
-        var GAP_HALF_R = ROUND_OK ? 'calc(100% - 18px - 0.15em - round(nearest, 0.4733em, 1px))'
-                                  : 'calc(100% - 18px - 0.6233em)';
-        var A = S.align === 'left' ? { list: 'flex-start', text: 'left', main: 'flex-start', origin: '0% 50%', gap: 'flex-start', items: 'flex-start', gbox: '0% 50%', ginner: GAP_HALF + ' 50%' }
-              : S.align === 'right' ? { list: 'flex-end', text: 'right', main: 'flex-end', origin: '100% 50%', gap: 'flex-end', items: 'flex-end', gbox: '100% 50%', ginner: GAP_HALF_R + ' 50%' }
-              : { list: 'center', text: 'center', main: 'center', origin: '50% 50%', gap: 'flex-start', items: 'flex-start', gbox: '0% 50%', ginner: GAP_HALF + ' 50%' };
-        setVar('--we-lyric-align', A.list);
-        setVar('--we-text-align', A.text);
-        setVar('--we-justify', A.main);
-        setVar('--we-line-origin', A.origin);
-        setVar('--we-gap-anchor', A.gap);
-        setVar('--we-line-items', A.items);
-        /* 等待点的两个缩放原点也跟锚边走：盒子的展开回正（1.06 → 1）和
-           内层点团的呼吸/收尾放大（1 → 1.6）如果永远从左缘长，右对齐时点团在右缘，
-           每一次呼吸/开合都会被甩出几十像素 —— 就是"左右乱飘"。 */
-        setVar('--we-gap-box-origin', A.gbox);
-        setVar('--we-gap-inner-origin', A.ginner);
-        if (oldLefts) flipAlignRows(oldLefts);
+        /* 水平对齐已固定为左对齐（歌词固定在右半屏），面板里的「水平对齐」项已删除：
+           原先把对齐贯穿到 list / text / main / origin / gap / items 六个消费点、
+           还要在切换时做 FLIP 过渡的那一整套逻辑随之删除。
+           现在对齐完全由 index.html 的静态 CSS 决定（.lyric-list 的
+           align-items:flex-start + .lyric-line 的 transform-origin:0 50%），
+           运行时不再有"对齐状态"，也就没有切对齐时的瞬间平移问题。 */
         if (S.padX === null) root.style.removeProperty('--we-pad-x');
         else setVar('--we-pad-x', S.padX + '%');
         if (S.lineHeight === null) root.style.removeProperty('--we-lh');
@@ -626,23 +553,14 @@
         if (trC) setVar('--we-trans-c', trC);
 
         /* ---- 播放控件 ---- */
-        setVar('--we-ui-scale', String(S.uiScale));
+        /* 竖排播放区的"尺码系数"：封面/歌名/进度/控件条都按它算宽度与字号。
+           不写成 transform 缩放 —— 那样 >1 就会越出左半屏压到歌词上。 */
+        setVar('--np-u', String(S.uiScale));
         setVar('--we-lift', S.lift + 'px');
-        setVar('--we-glass-blur', S.glassBlur + 'px');
-        setVar('--we-glass-sat', String(S.glassSat));
-        setVar('--we-glass-bright', String(S.glassBright));
-        setVar('--we-r-glass', S.glassRadius + 'px');
+        /* 「变淡」：控件行淡到多少（面板可调）。液态玻璃整套已删除，
+           这里只剩两个不透明度，没有任何滤镜要同步。 */
         setVar('--we-dim-op', String(S.dimOp));
-        /* 状态小胶囊跟着玻璃走，但轻一档：原值 16px / 1.6 相对 24px / 1.85 的比例。
-           在 JS 里算好再写，默认得到的就是精确的 16 / 1.6，不会因为 calc 的
-           浮点误差变成 16.008px。 */
-        setVar('--we-glass-blur-chip', (S.glassBlur * (16 / 24)).toFixed(3) + 'px');
-        setVar('--we-glass-sat-chip', (S.glassSat * (1.6 / 1.85)).toFixed(4));
-        /* 胶囊的「离开就淡下去」同样比玻璃本体深一档（原值 0.5 相对 0.42）。 */
         setVar('--we-dim-op-chip', (S.dimOp * (0.5 / 0.42)).toFixed(4));
-        /* 玻璃的饱和/亮度现在烘在 SVG 滤镜原语里（折射接管了 backdrop-filter 链），
-           变量变了要通知 attachLiquidGlass 重建滤镜参数。 */
-        try { window.dispatchEvent(new Event('we-glass-params')); } catch (e) { }
 
         /* ---- 开关类 ---- */
         var cl = root.classList;
@@ -651,7 +569,6 @@
         cl.toggle('we-no-trans', !S.transOn);
         cl.toggle('we-no-art', !S.artOn);
         cl.toggle('we-no-glow', S.glow <= 0);
-        cl.toggle('we-no-sheen', !S.sheen);
         cl.toggle('we-no-chip', !S.chipOn);
         cl.toggle('we-no-collect', !S.collectOn);
         cl.toggle('we-no-volume', !S.volumeOn);
@@ -725,7 +642,6 @@
             if (p.lyric_scale) S.lyricScale = num(p.lyric_scale.value, S.lyricScale);
             if (p.lyric_active_scale) S.activeScale = num(p.lyric_active_scale.value, S.activeScale);
             if (p.lyric_dim) S.dimK = num(p.lyric_dim.value, S.dimK);
-            if (p.lyric_align) S.align = String(p.lyric_align.value || 'center');
             if (p.lyric_pad) S.padX = num(p.lyric_pad.value, 6);
             if (p.lyric_line_height) S.lineHeight = num(p.lyric_line_height.value, 1.5);
             if (p.font_family) S.fontFamily = String(p.font_family.value || 'system');
@@ -745,11 +661,6 @@
             /* ---- 播放控件 ---- */
             if (p.ui_scale) S.uiScale = num(p.ui_scale.value, S.uiScale);
             if (p.ui_lift) S.lift = num(p.ui_lift.value, S.lift);
-            if (p.glass_blur) S.glassBlur = num(p.glass_blur.value, S.glassBlur);
-            if (p.glass_sat) S.glassSat = num(p.glass_sat.value, S.glassSat);
-            if (p.glass_bright) S.glassBright = num(p.glass_bright.value, S.glassBright);
-            if (p.glass_radius) S.glassRadius = num(p.glass_radius.value, S.glassRadius);
-            if (p.glass_sheen) S.sheen = !!p.glass_sheen.value;
             if (p.dim_enable) S.dimOn = !!p.dim_enable.value;
             if (p.dim_opacity) S.dimOp = pct(p.dim_opacity.value, 42);
             if (p.show_chip) S.chipOn = !!p.show_chip.value;

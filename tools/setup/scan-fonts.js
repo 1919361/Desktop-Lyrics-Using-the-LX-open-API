@@ -17,9 +17,9 @@
  *   本脚本只负责维护下拉列表本身。）
  *
  *  用法：
- *    node scan-fonts.js                 扫描并写入
- *    node scan-fonts.js --dry           只看结果，不写文件
- *    node scan-fonts.js --dir D:\fonts  额外扫描一个目录（可重复）
+ *    node tools/setup/scan-fonts.js            扫描并写入
+ *    node tools/setup/scan-fonts.js --dry      只看结果，不写文件
+ *    node tools/setup/scan-fonts.js --dir D:\fonts  额外扫描一个目录（可重复）
  * ========================================================================== */
 'use strict';
 
@@ -27,7 +27,7 @@
  *  ⚠ 此脚本已停用（2026-09-22，字体规则改版）⚠
  *  字体下拉固定为「通用 3 项 + 微软雅黑/等线/黑体」，不再把系统字体灌进列表；
  *  想用某个具体字体：改名为 CustomFont.ttf / CustomFont.otf 放进本目录即可。
- *  真要恢复：node scan-fonts.js --i-am-sure
+ *  真要恢复：node tools/setup/scan-fonts.js --i-am-sure
  * ======================================================================== */
 if (!process.argv.includes('--i-am-sure')) {
     console.error('✖ scan-fonts.js 已停用：字体下拉固定为通用 3 项 + 微软雅黑/等线/黑体，具体字体请用 CustomFont.ttf/otf。');
@@ -37,7 +37,7 @@ if (!process.argv.includes('--i-am-sure')) {
 const fs = require('fs');
 const path = require('path');
 
-const HERE = __dirname;
+const HERE = path.join(__dirname, '..', '..');   // 工程根目录（本脚本在 tools/setup/ 下）
 const PROJECT = path.join(HERE, 'project.json');
 const FONTS_JSON = path.join(HERE, 'fonts.json');
 

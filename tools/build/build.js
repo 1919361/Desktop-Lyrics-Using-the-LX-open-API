@@ -13,14 +13,14 @@
  *  壁纸工程这边只要重跑一次本脚本就同步到最新版。
  *
  *  用法：
- *      node build.js                       # 用 ..\lyrics.html
- *      node build.js D:\path\to\lyrics.html
+ *      node tools/build/build.js              # 用 ..\lyrics.html
+ *      node tools/build/build.js D:\path\to\lyrics.html
  * ========================================================================== */
 
 const fs = require('fs');
 const path = require('path');
 
-const HERE = __dirname;
+const HERE = path.join(__dirname, '..', '..');   // 工程根目录（本脚本在 tools/build/ 下）
 const OUT_HTML = path.join(HERE, 'index.html');
 const OUT_PHOTO = path.join(HERE, 'backpicture.jpg');
 const START = '<!-- ==== WE-INJECT-START ==== -->';

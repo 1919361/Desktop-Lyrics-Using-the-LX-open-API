@@ -1,0 +1,12 @@
+# 壁纸工程的文本文件**按原样**进出仓库，不做换行转换。
+#
+# 原因：project.json 是 CRLF（Wallpaper Engine 自己写出来的），而 index.html 是 LF。
+# 一旦让 git 自动转换换行，每次 checkout 之后 project.json 会变成"整个文件都改了"的假 diff，
+# 还会让 WE 面板的默认值看起来像是被改过。
+* -text
+
+# 二进制，别试图 diff / 合并
+*.ttf  binary
+*.otf  binary
+*.jpg  binary
+*.png  binary

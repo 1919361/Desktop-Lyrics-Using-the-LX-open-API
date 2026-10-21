@@ -77,21 +77,19 @@ html body .lyric-scroll {
     padding-right: var(--we-pad-x, 6%);
 }
 
-/* 水平对齐：flex 容器是纵向的，align-items 就是横向对齐 */
-html body .lyric-list {
-    align-items: var(--we-lyric-align, center);
-}
+/* ★ 水平对齐已固定为「右半屏左对齐」，这里不再有任何对齐变量。
+   对齐完全由 index.html 的静态 CSS 决定：
+     .lyric-list  { align-items: flex-start }
+     .lyric-line  { transform-origin: 0% 50%; text-align: left }
+     .lyric-main  { justify-content: flex-start }
+     .gap-inner / .gap-breath / .gap-line —— 全部靠左缘
+   原先那套 --we-lyric-align / --we-line-origin / --we-gap-* 变量、
+   以及"切换对齐时用 FLIP 动画滑过去"的逻辑已全部删除。 */
 
 /* 基准行（非当前行）。字号按倍数缩放，各断点的原值原样保留在下面。 */
 html body .lyric-line {
     font-size: calc(2.2rem * var(--we-lyric-scale, 1));
     line-height: var(--we-lh, 1.5);
-    text-align: var(--we-text-align, center);
-    /* 缩放原点必须在「所有状态」下恒定（此前只有 .active 设了原点）：
-       行失活的瞬间原点会跳回默认的中心 —— 已经放大的行先横跳回居中、
-       再慢慢收回去（左/右对齐时非常明显，用户报的"收合动画切回居中"）。
-       原点恒定钉在对齐边上，放大幅度和收合动画就都贴着对齐边走。 */
-    transform-origin: var(--we-line-origin, 50% 50%);
     /* 兜底是 inherit —— 没选字体时这里就等于原样，选了才换。
        字体栈由 we-glue.js 拼（选中族 + 原 body 字体兜底），见 fontStack()。 */
     font-family: var(--we-font, inherit);
@@ -104,9 +102,6 @@ html body .lyric-line.active {
        --line-fit 由页面在行变成当前行时按行写入（可用宽度 ÷ 该行布局宽度）——
        长句放大后不再溢出屏幕；min() 里任何一边缺省都有安全兜底。 */
     transform: scale(min(var(--we-active-scale, 2), var(--line-fit, 10)));
-    /* 缩放原点跟对齐走：左对齐钉左缘（往右长）、右对齐钉右缘、居中从中心长。
-       原点写死居中时，左/右对齐的行放大会把一半推出屏幕（用户报的溢出）。 */
-    transform-origin: var(--we-line-origin, 50% 50%);
     filter: blur(0);
     opacity: 1;
 }
@@ -121,48 +116,16 @@ html body .lyric-line.has-trans.active {
     transform:
         translateY(calc(0.51em * (min(var(--we-active-scale, 2), var(--line-fit, 10)) - 1)))
         scale(min(var(--we-active-scale, 2), var(--line-fit, 10)));
-    transform-origin: var(--we-line-origin, 50% 50%);
-}
-
-/* 水平对齐的另外三个消费点（页面里都写死了居中，属性面板调了对不齐）：
-   ① 逐字排布层 .lyric-main 的 justify-content —— 长句换行后的短行全靠它对齐；
-   ② 行内子元素（主歌词/翻译）的横向对齐 —— 翻译要贴着对齐边；
-   ③ 间奏点在盒子内的锚边 —— 左对齐钉左、右对齐钉右（居中保持 JS 落位）。 */
-html body .lyric-main { justify-content: var(--we-justify, center); }
-html body .lyric-line { align-items: var(--we-line-items, flex-start); }
-/* ③ 间奏点在盒子内的锚边 —— 左对齐钉左、右对齐钉右（居中保持 JS 落位）。
-     同时把两层的缩放原点也跟锚边走：外层（放大量）与呼吸层的缩放
-都锚在**三个点组成的点团的团心**上（18px + 0.6233em：三个 0.3em 的点
-加 0.1733em 间距 = 1.2467em 宽，团心在 0.6233em）——
-     锚错位置时右对齐会让点在呼吸/放大时被甩出几十像素（"左右乱飘"的根源）。
-   ⚠ 第 46 轮起 DOM 多了一层 .gap-breath（呼吸独立成层），
-     横向对齐与原点必须同时作用到这两层上。 */
-html body .gap-inner,
-html body .gap-breath {
-    justify-content: var(--we-gap-anchor, flex-start);
-    transform-origin: var(--we-gap-inner-origin, calc(18px + 0.6233em) 50%);
-}
-/* ★ 第 51 轮：点团节距取整（见 index.html 的 .gap-breath）后，团心 = 18px +
-   0.15em + 1 个节距，缩放原点必须同步，否则放大/呼吸会偏离团心。
-   ⚠ 这里 round() 写在 var() 的**兜底值**里，属于"计算期才失效"——
-     直接写会让整条声明变成 invalid-at-computed-value-time 并**回落到初始值
-     50% 50%**（比不写更糟）。所以用 @supports 门控：引擎不支持 round() 时
-     整个块不生效，上面那条（0.6233em）照旧。 */
-@supports (width: round(nearest, 1px, 1px)) {
-    html body .gap-inner,
-    html body .gap-breath {
-        transform-origin: var(--we-gap-inner-origin,
-            calc(18px + 0.15em + round(nearest, 0.4733em, 1px)) 50%);
-    }
-}
-html body .lyric-line.gap-line {
-    transform-origin: var(--we-gap-box-origin, 0 50%);
 }
 
 /* 已唱过 / 即将唱的两行：共用一个「非当前行存在感」系数，默认值即原值 */
 html body .lyric-line.played {
     filter: blur(calc(8px * var(--we-dim-k, 1)));
-    opacity: calc(0.26 * var(--we-dim-k, 1));
+    /* ★ 唱完的行会**完全淡出**（缩小的过程中撒粒子，然后隐藏）。
+       这里必须是 0：本文件的选择器（html body ...）优先级更高，
+       写 0.26 会把 index.html 里的 opacity:0 压回去，等于这条功能失效。
+       「非当前行的模糊/变暗程度」滑条仍然作用于上面的 blur。 */
+    opacity: 0;
 }
 html body .lyric-line.upcoming-1 {
     filter: blur(calc(1.8px * var(--we-dim-k, 1)));
@@ -203,21 +166,31 @@ html body .lyric-char {
 
 /* 当前字的光晕。强度为 0 时整组换成 filter:none，省掉每帧的滤镜开销。
    三层颜色各自独立（原值 基础 0.5 / 已唱 0.55 / 在唱 0.85 + 外层沉蓝 0.5），
-   由 we-glue.js 从「强调色」派生，默认强调色下与原值逐字相同。 */
-html body .lyric-line.active .lyric-char {
+   由 we-glue.js 从「强调色」派生，默认强调色下与原值逐字相同。
+   ★ 2026-10-06：必须把 `.simul`（同刻对唱组的陪跑行）一并列进来 ——
+     它在页面上和 .active 一样在扫光，漏掉它就会回落到页面里硬编码的蓝色，
+     于是"一起扫光时只有中间那句跟着强调色变、另外几句还是默认蓝"。
+     新增同类选择器时记得两处一起加（光晕 + 无光晕），否则同样会漏。 */
+html body .lyric-line.active .lyric-char,
+html body .lyric-line.simul .lyric-char {
     filter: drop-shadow(0 0 var(--we-glow1, 6px) var(--we-glow-c, rgba(140, 200, 255, 0.5)));
 }
-html body .lyric-line.active .lyric-char.singing {
+html body .lyric-line.active .lyric-char.singing,
+html body .lyric-line.simul .lyric-char.singing {
     filter:
         drop-shadow(0 0 var(--we-glow2, 12px) var(--we-glow-c2, rgba(160, 210, 255, 0.85)))
         drop-shadow(0 0 calc(var(--we-glow2, 12px) * 2) var(--we-glow-c3, rgba(100, 160, 255, 0.5)));
 }
-html body .lyric-line.active .lyric-char.sung {
+html body .lyric-line.active .lyric-char.sung,
+html body .lyric-line.simul .lyric-char.sung {
     filter: drop-shadow(0 0 var(--we-glow1, 6px) var(--we-glow-c-sung, rgba(140, 200, 255, 0.55)));
 }
 html.we-no-glow body .lyric-line.active .lyric-char,
 html.we-no-glow body .lyric-line.active .lyric-char.singing,
-html.we-no-glow body .lyric-line.active .lyric-char.sung {
+html.we-no-glow body .lyric-line.active .lyric-char.sung,
+html.we-no-glow body .lyric-line.simul .lyric-char,
+html.we-no-glow body .lyric-line.simul .lyric-char.singing,
+html.we-no-glow body .lyric-line.simul .lyric-char.sung {
     filter: none;
 }
 
@@ -258,73 +231,34 @@ html body .bg-batch.fade-out .bg-char.revealed { opacity: 0; }
 
 
 /* ==========================================================================
- * 5. 底部播放控件（液态玻璃）
+ * 5. 左半屏播放区（纯图标控件行）
  * ======================================================================== */
 
-/* 整体缩放：用 transform 而不是 zoom —— 不影响内部百分比宽度，
- * 原点压在底边中点，放大时整块「往上长」，水平依旧居中。 */
-html body .dock-wrap {
-    --r-glass: var(--we-r-glass, 26px);   /* 内层 --r-inner 会自动重算，保持同心 */
-    /* 圆角调到比内边距还小时，别让内层算成负数（负圆角是非法值，会整条失效） */
-    --r-inner: max(0px, calc(var(--r-glass) - var(--pad-glass)));
-    transform: translateX(-50%) scale(var(--we-ui-scale, 1));
-    transform-origin: 50% 100%;
-    /* 在原来自适应高度之上再叠一个自定义抬升量 */
-    bottom: calc(var(--dock-lift) + var(--we-lift, 0px) + env(safe-area-inset-bottom, 0px));
-}
+/* 这一层只是「左半屏的一列」（index.html 的 .player-col）：位置、竖排顺序、
+ * 封面尺寸都由页面自身的布局决定。
+ * ⚠ 整体缩放（ui_scale）不用 transform：竖排布局里缩放整列会越界压到右半屏的
+ *   歌词上。它由 --np-u 作为"尺码系数"参与宽度/字号的 calc。
+ * ⚠ 液态玻璃（磨砂 / 饱和 / 亮度 / 圆角 / 液态高光）已从面板里整套删除，
+ *   控件行没有任何底板与背景滤镜 —— 这里不再需要任何覆盖规则。 */
 
-/* 窄屏：宽度本来就已经贴边，再放大就溢出了 —— 直接不缩放，圆角也跟着收 */
-@media (max-width: 900px) {
-    html body .dock-wrap {
-        transform: translateX(-50%);
-        --r-glass: min(var(--we-r-glass, 26px), 24px);
-    }
-}
-@media (max-width: 600px) {
-    html body .dock-wrap { --r-glass: min(var(--we-r-glass, 26px), 20px); }
-}
-
-/* 玻璃本体的色彩参数（**无 blur** —— 液态玻璃中心是"透"的，blur 已按需求
- * 整个删掉；位移折射由页面的 SVG 滤镜负责。本条只是 url() 不可用时的回落，
- * 「磨砂强度」属性（--we-glass-blur）因此不再起作用，保留只为兼容旧配置） */
-html body .player-dock {
-    backdrop-filter:
-        saturate(var(--we-glass-sat, 1.9))
-        brightness(var(--we-glass-bright, 1.06));
-    -webkit-backdrop-filter:
-        saturate(var(--we-glass-sat, 1.9))
-        brightness(var(--we-glass-bright, 1.06));
-}
-
-/* 状态小胶囊用同一套参数，但比玻璃本体轻一档（原值 16/1.6/1.06）。
-   chip 变量由 we-glue.js 精确算出，避免 calc(*0.667) 的浮点误差（16.008px）。 */
+/* 状态小胶囊（连接状态）：唯一还带"毛玻璃"的部件，参数写死，
+   不再跟随那组已删除的玻璃滑条。 */
 html body .conn-bar {
-    backdrop-filter:
-        blur(var(--we-glass-blur-chip, 16px))
-        saturate(var(--we-glass-sat-chip, 1.6))
-        brightness(var(--we-glass-bright, 1.06));
-    -webkit-backdrop-filter:
-        blur(var(--we-glass-blur-chip, 16px))
-        saturate(var(--we-glass-sat-chip, 1.6))
-        brightness(var(--we-glass-bright, 1.06));
+    backdrop-filter: blur(16px) saturate(1.6) brightness(1.06);
+    -webkit-backdrop-filter: blur(16px) saturate(1.6) brightness(1.06);
 }
 
 /* 「指针不在控件上就淡下去」：
- * ⚠ 玻璃本体（.player-dock）**永远不参与 opacity 变淡** —— 液态玻璃折射
- *   （backdrop-filter: url(#svg)）+ 元素半透明 = 原始背景透出来 = 重影
- *   （这条规则曾经就是壁纸引擎里"一个字两个影子"的元凶）。
- *   变淡拆到：内容层淡出（下面第一条）+ 玻璃体内 .dock-dim 暗纱（页面 CSS 固定 0.45）。
- * 「变淡程度」属性（--we-dim-op）现在控制的是**内容层**的淡出深度。 */
-html body .dock-wrap.idle .player-dock > :not(.dock-dim) { opacity: var(--we-dim-op, 0.42); }
-html body .dock-wrap.idle .conn-bar { opacity: var(--we-dim-op-chip, 0.5); }
-/* 「变淡关闭」开关：内容层淡出、暗纱、状态条淡出全部回到不淡的状态
- * （玻璃本体本来就不参与变淡，无需覆盖） */
-html.we-no-dim body .dock-wrap.idle .player-dock > :not(.dock-dim),
-html.we-no-dim body .dock-wrap.idle .conn-bar { opacity: 1; }
-html.we-no-dim body .dock-wrap.idle .dock-dim { opacity: 0; }
+ * 控件行没有底板了，所以变淡就是整行图标的 opacity；
+ * 封面 / 歌名 / 进度**不参与**变淡 —— 它们是画面主体。
+ * 「变淡程度」属性（--we-dim-op）就是淡到多少。 */
+html body .player-col.idle .player-dock { opacity: var(--we-dim-op, 0.42); }
+html body .player-col.idle .conn-bar { opacity: var(--we-dim-op-chip, 0.5); }
+/* 「变淡关闭」开关：回到不淡的状态 */
+html.we-no-dim body .player-col.idle .player-dock,
+html.we-no-dim body .player-col.idle .conn-bar { opacity: 1; }
 
 /* 各部件显隐 */
-html.we-no-sheen body .lg-sheen { display: none !important; }
 html.we-no-chip body .conn-bar { display: none !important; }
 html.we-no-collect body #btnCollect { display: none !important; }
 html.we-no-volume body .pb-volume { display: none !important; }

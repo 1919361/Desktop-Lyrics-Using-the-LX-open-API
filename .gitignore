@@ -1,0 +1,16 @@
+# ===== 开发脚本产生的临时文件（截图 / 渲染页）=====
+/_shot*.png
+/_crop*.png
+/_dust.png
+/_strike.png
+/_render.html
+
+# ===== 编辑器 / 系统 =====
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 可选：不想把 11 MB 的字体写进 git 历史，就取消下面这行的注释 =====
+# /CustomFont.ttf

@@ -195,7 +195,7 @@
 				"order" : 147,
 				"text" : "指针不在控件上时变淡",
 				"type" : "bool",
-				"value" : true
+				"value" : false
 			},
 			"dim_opacity" : 
 			{
@@ -272,58 +272,6 @@
 				"type" : "combo",
 				"value" : "both"
 			},
-			"glass_blur" : 
-			{
-				"index" : 43,
-				"max" : 60,
-				"min" : 0,
-				"order" : 143,
-				"step" : 2,
-				"text" : "状态条磨砂强度（px · 播放控件为纯折射无模糊）",
-				"type" : "slider",
-				"value" : 16
-			},
-			"glass_bright" : 
-			{
-				"index" : 45,
-				"max" : 1.8,
-				"min" : 0.6,
-				"order" : 145,
-				"step" : 0.02,
-				"text" : "玻璃透出的亮度",
-				"type" : "slider",
-				"value" : 1.06
-			},
-			"glass_radius" : 
-			{
-				"index" : 42,
-				"max" : 40,
-				"min" : 0,
-				"order" : 142,
-				"step" : 1,
-				"text" : "圆角（px · 内层自动同心）",
-				"type" : "slider",
-				"value" : 26
-			},
-			"glass_sat" : 
-			{
-				"index" : 44,
-				"max" : 3,
-				"min" : 1,
-				"order" : 144,
-				"step" : 0.05,
-				"text" : "玻璃透出的饱和度",
-				"type" : "slider",
-				"value" : 1.9
-			},
-			"glass_sheen" : 
-			{
-				"index" : 46,
-				"order" : 146,
-				"text" : "液态高光（跟随指针 + 自主游走）",
-				"type" : "bool",
-				"value" : true
-			},
 			"grp_amb" : 
 			{
 				"index" : 11,
@@ -376,29 +324,6 @@
 				"text" : "当前行放大倍率",
 				"type" : "slider",
 				"value" : 2
-			},
-			"lyric_align" : 
-			{
-				"index" : 24,
-				"options" : 
-				[
-					{
-						"label" : "居中",
-						"value" : "center"
-					},
-					{
-						"label" : "左对齐",
-						"value" : "left"
-					},
-					{
-						"label" : "右对齐",
-						"value" : "right"
-					}
-				],
-				"order" : 124,
-				"text" : "水平对齐",
-				"type" : "combo",
-				"value" : "center"
 			},
 			"lyric_char_dim" : 
 			{
@@ -459,7 +384,7 @@
 				"min" : 0,
 				"order" : 125,
 				"step" : 0.5,
-				"text" : "左右留白（%）",
+				"text" : "歌词左右留白（%）",
 				"type" : "slider",
 				"value" : 6
 			},
@@ -580,7 +505,7 @@
 				"min" : -20,
 				"order" : 141,
 				"step" : 4,
-				"text" : "离底部再抬高（px）",
+				"text" : "播放区整体垂直位置微调（px）",
 				"type" : "slider",
 				"value" : 0
 			},
@@ -591,7 +516,7 @@
 				"min" : 0.6,
 				"order" : 140,
 				"step" : 0.02,
-				"text" : "控件整体大小（倍率 · 窄屏自动失效）",
+				"text" : "播放区整体大小（倍率）",
 				"type" : "slider",
 				"value" : 1
 			}

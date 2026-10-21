@@ -9,9 +9,9 @@
  *      · 不会碰到你正在播放的播放器
  *
  *  用法：
- *      node make-preview.js                # 1920×1080，质量 88
- *      node make-preview.js 1280 720       # 自定义尺寸
- *      node make-preview.js 1920 1080 --raw   # 不用桩数据，截「等待播放」的真实状态
+ *      node tools/render/make-preview.js            # 1920×1080，质量 88
+ *      node tools/render/make-preview.js 1280 720   # 自定义尺寸
+ *      node tools/render/make-preview.js 1920 1080 --raw   # 不用桩数据，截「等待播放」的真实状态
  */
 'use strict';
 
@@ -21,7 +21,7 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 
-const SRC = __dirname;
+const SRC = path.join(__dirname, '..', '..');   // 工程根目录（本脚本在 tools/render/ 下）
 const OUT = path.join(SRC, 'preview.jpg');
 const PORT = 8843;
 const CDP = 9393;
@@ -76,13 +76,52 @@ const LRC = SAMPLE.map(function (L) {
    与其猜偏移量，不如后面「等到唱到第 5 个字再截」。 */
 const PROGRESS = 30.3;
 
+/* 示例封面：一段内联 SVG（不再依赖任何外部图床）。
+   为什么必须是真图而不是留空：新布局里封面是左半屏的视觉焦点，
+   没有封面就只剩占位音符，缩略图完全看不出这个壁纸在做什么。
+   用 SVG 还有一个好处 —— data: 图片不会污染 canvas，
+   页面里的取色 / 四色调色板（extractPaletteFromImage）能正常工作。 */
+const COVER_SVG = [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640">',
+    '<defs>',
+    '<linearGradient id="g" x1="0" y1="0" x2="1" y2="1">',
+    '<stop offset="0" stop-color="#241a52"/>',
+    '<stop offset="0.45" stop-color="#5b3fa8"/>',
+    '<stop offset="0.78" stop-color="#c66a9e"/>',
+    '<stop offset="1" stop-color="#ffb27a"/>',
+    '</linearGradient>',
+    '<radialGradient id="glow" cx="0.5" cy="0.66" r="0.46">',
+    '<stop offset="0" stop-color="#ffe2bd" stop-opacity="0.95"/>',
+    '<stop offset="1" stop-color="#ff8a5c" stop-opacity="0"/>',
+    '</radialGradient>',
+    '<linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">',
+    '<stop offset="0" stop-color="#120c26" stop-opacity="0.35"/>',
+    '<stop offset="1" stop-color="#0a0718" stop-opacity="0.9"/>',
+    '</linearGradient>',
+    '</defs>',
+    '<rect width="640" height="640" fill="url(#g)"/>',
+    '<circle cx="320" cy="410" r="250" fill="url(#glow)"/>',
+    '<circle cx="320" cy="410" r="132" fill="#ffe9cd" opacity="0.94"/>',
+    '<rect y="452" width="640" height="188" fill="url(#sea)"/>',
+    '<g opacity="0.22" stroke="#ffe9cd" stroke-width="2">',
+    '<path d="M0 500h640M0 536h640M0 576h640" opacity="0.5"/>',
+    '</g>',
+    '<g fill="#0b0718" opacity="0.55">',
+    '<circle cx="150" cy="118" r="2.5"/><circle cx="232" cy="72" r="1.8"/>',
+    '<circle cx="404" cy="96" r="2.2"/><circle cx="512" cy="150" r="1.6"/>',
+    '<circle cx="558" cy="70" r="2.4"/><circle cx="96" cy="196" r="1.5"/>',
+    '</g>',
+    '</svg>'
+].join('');
+const COVER = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(COVER_SVG);
+
 /* 桩：拦掉 fetch / EventSource，播放状态固定成上面那个位置 */
 const INJECT = `
 window.__LRC = "${LRC}";
 (function(){var of=window.fetch;
   window.fetch=function(u,x){ var s=String(u);
     if(s.indexOf('/lyric-all')>=0) return Promise.resolve(new Response(JSON.stringify({lyric:window.__LRC}),{status:200,headers:{'Content-Type':'application/json'}}));
-    if(s.indexOf('/status')>=0) return Promise.resolve(new Response(JSON.stringify({status:'playing',name:'示例曲目',singer:'示例歌手',albumName:'',duration:200,progress:${PROGRESS},playbackRate:1,collect:true,volume:74,mute:false,picUrl:''}),{status:200,headers:{'Content-Type':'application/json'}}));
+    if(s.indexOf('/status')>=0) return Promise.resolve(new Response(JSON.stringify({status:'playing',name:'示例曲目',singer:'示例歌手',albumName:'',duration:200,progress:${PROGRESS},playbackRate:1,collect:true,volume:74,mute:false,picUrl:'${COVER}'}),{status:200,headers:{'Content-Type':'application/json'}}));
     return of.apply(this,arguments);};})();
 (function(){var OE=window.EventSource; if(!OE) return;
   var P=function(u,c){ this.__u=String(u); };
@@ -94,7 +133,7 @@ window.__LRC = "${LRC}";
 (async () => {
     if (!BROWSER) { console.error('✖ 没找到 Edge / Chrome，无法截图。'); process.exit(1); }
     if (!fs.existsSync(path.join(SRC, 'index.html'))) {
-        console.error('✖ 找不到 index.html，先跑 build.js。'); process.exit(1);
+        console.error('✖ 找不到 index.html，先跑 tools/build/build.js。'); process.exit(1);
     }
 
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'we-preview-'));
